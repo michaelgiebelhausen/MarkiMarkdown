@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarkiMarkdown</title>
+<meta name="description" content="A free Markdown editor that shows the code and the clean text side by side.">
+<style>
+  :root {
+    --bg: #fcfcfb; --raised: #fff; --text: #1f1f1e; --muted: #6f6f6a;
+    --line: #e6e5e1; --accent: #2f6fed; --warn-bg: #fdf6e3; --warn-line: #e6d9a8;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b1d; --raised: #232326; --text: #e7e7e3; --muted: #9a9a94;
+      --line: #33333a; --accent: #7aa7ff; --warn-bg: #38321f; --warn-line: #5d5334;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--ui); font-size: 17px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 .4rem; letter-spacing: -0.02em; }
+  .tag { color: var(--muted); font-size: 1.1rem; margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 3rem 0 .75rem; }
+  a { color: var(--accent); }
+  .get {
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem; margin-bottom: 1rem;
+  }
+  .btn {
+    display: inline-block; background: var(--accent); color: #fff;
+    text-decoration: none; font-weight: 600; padding: .7rem 1.4rem;
+    border-radius: 9px; font-size: 1rem;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .sub { color: var(--muted); font-size: .92rem; margin-top: .7rem; }
+  .other { color: var(--muted); font-size: .92rem; }
+  .note {
+    background: var(--warn-bg); border: 1px solid var(--warn-line);
+    border-radius: 11px; padding: 1rem 1.2rem; font-size: .95rem; margin: 1.5rem 0;
+  }
+  code {
+    font-family: var(--mono); font-size: .87em;
+    background: rgba(128,128,128,.15); padding: .1em .38em; border-radius: 4px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  td { padding: .45rem .8rem .45rem 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  td:first-child { width: 11rem; white-space: nowrap; }
+  footer { margin-top: 4rem; color: var(--muted); font-size: .9rem; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>MarkiMarkdown</h1>
+  <p class="tag">A free Markdown editor that shows you the code and the clean text at the same time.</p>
+
+  <div class="get">
+    <a class="btn" id="download" href="https://github.com/michaelgiebelhausen/markimarkdown/releases/latest">Download</a>
+    <div class="sub" id="platform">Choose your download below.</div>
+  </div>
+
+  <p class="other">
+    Other downloads:
+    <a href="https://github.com/michaelgiebelhausen/markimarkdown/releases/latest">Windows installer, Windows portable, and Mac</a>.
+    Ignore any file ending in <code>.blockmap</code> or <code>.yml</code>, and the "Source code" links.
+  </p>
+
+  <div class="note" id="win-note">
+    <strong>Windows will warn you the first time.</strong> It says
+    &ldquo;Windows protected your PC&rdquo; because this app is new and not yet signed by a company Windows
+    recognises. Click <strong>More info</strong>, then <strong>Run anyway</strong>. If Windows refuses to open
+    it at all, see the <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/main/docs/INSTALL.md">install guide</a>.
+  </div>
+
+  <h2>What it is</h2>
+  <p>
+    The left side is the real Markdown, the code your note is made of. The right side is the same note, tidied
+    up. Type on either side and the other keeps up, so you learn the code while you write. Nothing to memorise
+    on day one.
+  </p>
+
+  <h2>Markdown in 60 seconds</h2>
+  <table>
+    <tr><td><code># Heading</code></td><td>a big heading (<code>##</code> and <code>###</code> are smaller)</td></tr>
+    <tr><td><code>**bold**</code></td><td><strong>bold</strong></td></tr>
+    <tr><td><code>*italic*</code></td><td><em>italic</em></td></tr>
+    <tr><td><code>- item</code></td><td>a bullet</td></tr>
+    <tr><td><code>1. item</code></td><td>a numbered list</td></tr>
+    <tr><td><code>- [ ] task</code></td><td>a checkbox</td></tr>
+    <tr><td><code>---</code></td><td>a dividing line</td></tr>
+  </table>
+
+  <h2>Filing notes into your second brain</h2>
+  <p>
+    Down the left edge is the <strong>Funky Bunch</strong>: your AI agents on top, your folders underneath.
+    Click whichever this note is relevant to and press File. Picking an agent picks the folders that agent
+    reads. A copy goes into every folder you chose, the agents are written into the note itself, and each
+    folder&rsquo;s <code>log.md</code> records what arrived.
+  </p>
+
+  <footer>
+    Free and open source under the MIT licence &middot;
+    <a href="https://github.com/michaelgiebelhausen/markimarkdown">Source on GitHub</a> &middot;
+    <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/main/docs/INSTALL.md">Install guide</a>
+  </footer>
+</div>
+
+<script>
+  // Point the big button at the right file for whoever is looking.
+  (function () {
+    var base = 'https://github.com/michaelgiebelhausen/markimarkdown/releases/latest/download/';
+    var version = '1.0.0';
+    var ua = navigator.userAgent;
+    var mac = /Mac/i.test(ua);
+    var win = /Windows/i.test(ua);
+    var button = document.getElementById('download');
+    var caption = document.getElementById('platform');
+    var winNote = document.getElementById('win-note');
+
+    if (mac) {
+      button.textContent = 'Download for Mac';
+      button.href = base + 'MarkiMarkdown-' + version + '-Mac.dmg';
+      caption.textContent = 'Open the file, then drag MarkiMarkdown into your Applications folder.';
+      winNote.classList.add('hide');
+    } else if (win) {
+      button.textContent = 'Download for Windows';
+      button.href = base + 'MarkiMarkdown-' + version + '-Windows-Setup.exe';
+      caption.textContent = 'Run the file you downloaded. No administrator password needed.';
+    } else {
+      caption.textContent = 'MarkiMarkdown runs on Windows and Mac. Pick a download from the list below.';
+      winNote.classList.add('hide');
+    }
+  })();
+</script>
+</body>
+</html>

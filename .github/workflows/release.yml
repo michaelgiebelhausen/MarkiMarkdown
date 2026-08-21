@@ -1,0 +1,72 @@
+name: Release
+
+# Tag a version to publish installers, for example:  git tag v1.0.0 && git push --tags
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright test --grep-invert "capture the interface"
+      - name: Build installers
+        # Signing turns on automatically once the Azure secrets are set: see docs/SIGNING.md
+        run: |
+          if ("${{ secrets.AZURE_CLIENT_ID }}" -ne "") {
+            npm run pack:win:signed
+          } else {
+            npm run pack:win
+          }
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MARKI_SIGN_ENDPOINT: ${{ secrets.MARKI_SIGN_ENDPOINT }}
+          MARKI_SIGN_ACCOUNT: ${{ secrets.MARKI_SIGN_ACCOUNT }}
+          MARKI_SIGN_PROFILE: ${{ secrets.MARKI_SIGN_PROFILE }}
+          MARKI_PUBLISHER: ${{ secrets.MARKI_PUBLISHER }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/MarkiMarkdown-*-Windows-Setup.exe
+            dist/MarkiMarkdown-*-Windows-Portable.exe
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build and notarise
+        run: npm run pack:mac
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - name: Check the signature is stapled
+        run: |
+          xcrun stapler validate dist/mac-universal/MarkiMarkdown.app || true
+          spctl --assess --type execute -vv dist/mac-universal/MarkiMarkdown.app || true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/MarkiMarkdown-*-Mac.dmg

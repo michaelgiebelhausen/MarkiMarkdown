@@ -1,0 +1,75 @@
+appId: com.markimarkdown.app
+productName: MarkiMarkdown
+copyright: MIT licensed free software
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+# Students should be able to tell at a glance which file to download.
+artifactName: MarkiMarkdown-${version}-${os}-${arch}.${ext}
+
+fileAssociations:
+  - ext: md
+    name: Markdown note
+    description: Markdown note
+    role: Editor
+    icon: build/icon.ico
+  - ext: markdown
+    name: Markdown note
+    description: Markdown note
+    role: Editor
+    icon: build/icon.ico
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  # per-user, one click: no admin prompt, which matters on school laptops
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MarkiMarkdown
+  deleteAppDataOnUninstall: false
+  artifactName: MarkiMarkdown-${version}-Windows-Setup.${ext}
+
+portable:
+  artifactName: MarkiMarkdown-${version}-Windows-Portable.${ext}
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  artifactName: MarkiMarkdown-${version}-Mac.${ext}
+
+dmg:
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+
+publish: null
