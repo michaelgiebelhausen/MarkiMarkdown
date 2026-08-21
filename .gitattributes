@@ -1,0 +1,10 @@
+# Source is stored with LF so the repo is identical on every machine.
+* text=auto eol=lf
+
+# This fixture must keep its CRLF line endings: a test proves MarkiMarkdown
+# preserves them, and normalising it here would quietly break that test.
+tests/fixtures/crlf.md -text
+
+*.png binary
+*.ico binary
+*.exe binary
