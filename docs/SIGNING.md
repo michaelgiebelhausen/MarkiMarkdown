@@ -79,3 +79,97 @@ version the next time they update.
 - Never commit the client secret. It belongs in environment variables, or in GitHub Actions secrets if you
   build releases there.
 - macOS signing is separate and uses your Apple Developer account: see `pack:mac` in `package.json`.
+
+---
+
+# Signing MarkiMarkdown for macOS
+
+macOS refuses to open a downloaded app unless it is signed and notarised, and there is no "run anyway" for
+most students. This part is not optional if you want Mac users in your class.
+
+## You need a "Developer ID Application" certificate
+
+Apple issues several kinds of certificate and they are not interchangeable:
+
+| Certificate | What it is for |
+| --- | --- |
+| iPhone Distribution | iOS apps sent to the App Store. **Not this one.** |
+| Apple Development | Testing on your own devices. Not this one either. |
+| Mac App Store | Apps sold through the Mac App Store. |
+| **Developer ID Application** | **Apps people download from you directly. This is the one.** |
+
+Only the Account Holder on the Apple Developer Program membership can create a Developer ID certificate.
+
+## You do not need a Mac
+
+The release workflow in `.github/workflows/release.yml` builds and notarises on GitHub's macOS runners, which
+are free for public repositories. Everything below can be done from Windows.
+
+### 1. The signing request
+
+Already generated for you at `C:\Users\boh56\marki-signing\`:
+
+- `developerID.csr` - upload this to Apple
+- `developerID.key` - **the private key. Never commit it, never email it, never paste it anywhere.**
+
+To regenerate it later:
+
+```
+openssl req -new -newkey rsa:2048 -nodes -keyout developerID.key -out developerID.csr -subj "/CN=Your Name/C=US"
+```
+
+### 2. Get the certificate from Apple
+
+1. Go to [developer.apple.com/account/resources/certificates](https://developer.apple.com/account/resources/certificates).
+2. Press **+**, choose **Developer ID Application**, and continue.
+3. Upload `developerID.csr` when asked for a Certificate Signing Request.
+4. Download the resulting `.cer` into the same folder.
+
+### 3. Combine them into a .p12
+
+Signing needs the certificate and its private key together in one file:
+
+```
+openssl x509 -inform DER -in developerID_application.cer -out developerID.pem
+openssl pkcs12 -export -inkey developerID.key -in developerID.pem -out developerID.p12
+```
+
+It asks for an export password. Choose one and keep it - that becomes `CSC_KEY_PASSWORD`.
+
+### 4. An app-specific password for notarising
+
+Apple will not accept your normal Apple ID password here. Go to
+[account.apple.com](https://account.apple.com), sign in, and under **Sign-In and Security** create an
+**App-Specific Password**. Copy it; Apple will not show it again.
+
+### 5. Add the secrets
+
+Turn the `.p12` into text so it can live in a secret:
+
+```
+openssl base64 -A -in developerID.p12 -out developerID.p12.base64
+```
+
+Then, in the GitHub repository under **Settings > Secrets and variables > Actions**, add:
+
+| Secret | Value |
+| --- | --- |
+| `CSC_LINK` | the contents of `developerID.p12.base64` |
+| `CSC_KEY_PASSWORD` | the export password from step 3 |
+| `APPLE_ID` | your Apple ID email address |
+| `APPLE_APP_SPECIFIC_PASSWORD` | the password from step 4 |
+| `APPLE_TEAM_ID` | your ten-character Team ID |
+
+Your Team ID is on the certificate you already have, and on the
+[membership page](https://developer.apple.com/account) of your developer account.
+
+### 6. Release
+
+Push a tag. The workflow builds, signs, sends the app to Apple to be notarised, staples the result, and
+attaches the `.dmg` to a draft release. The first notarisation can take a few minutes; later ones are quicker.
+
+## Keeping the secrets safe
+
+`developerID.key`, `developerID.p12` and the base64 file are all outside the repository on purpose. Keep them
+somewhere you back up, but never in git and never in a chat window. If one leaks, revoke the certificate in
+your Apple developer account and make a new one - it takes about five minutes.
