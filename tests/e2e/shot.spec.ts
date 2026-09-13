@@ -13,17 +13,20 @@ test('capture the interface', async () => {
   const root = mkdtempSync(join(tmpdir(), 'marki-shot-'))
   const userData = join(root, 'userData')
   const downloads = join(root, 'downloads')
-  const inbox = join(root, 'Inbox')
-  const research = join(root, 'Research')
-  for (const d of [userData, downloads, inbox, research]) mkdirSync(d, { recursive: true })
+  const raw = join(root, 'raw')
+  for (const d of [userData, downloads, raw]) mkdirSync(d, { recursive: true })
 
   writeFileSync(join(userData, 'settings.json'), JSON.stringify({
     seenCoachmark: true,
     members: [
-      { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', folderIds: ['f1', 'f2'] },
-      { id: 'a2', kind: 'agent', name: 'tutor', emoji: '\u{1F9D1}', folderIds: ['f2'] },
-      { id: 'f1', kind: 'folder', name: 'Inbox', emoji: '\u{1F4E5}', path: inbox, stamp: { tags: ['raw'] } },
-      { id: 'f2', kind: 'folder', name: 'Research', emoji: '\u{1F52C}', path: research, stamp: { tags: [] } }
+      { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
+      { id: 'a2', kind: 'agent', name: 'tutor', emoji: '\u{1F9D1}', path: join(root, 'tutor') },
+      { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') },
+      { id: 'x2', kind: 'artifact', name: 'startup', emoji: '\u{1F680}', path: join(root, 'startup') }
+    ],
+    bunches: [
+      { id: 'b1', name: 'study', emoji: '\u{1F393}', rawPath: raw, agentIds: ['a1', 'a2'], artifactIds: ['x1'] },
+      { id: 'b2', name: 'launch', emoji: '\u{1F680}', rawPath: raw, agentIds: ['a2'], artifactIds: ['x2'] }
     ]
   }), 'utf8')
 
@@ -86,7 +89,7 @@ test('capture the interface', async () => {
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(OUT as string, 'marki-06-bubble.png') })
 
-  await page.getByRole('button', { name: 'librarian agent' }).click()
+  await page.getByRole('button', { name: 'study bunch' }).click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(OUT as string, 'marki-03-selected.png') })
   await page.locator('.strip').screenshot({ path: join(OUT as string, 'marki-04-strip.png') })

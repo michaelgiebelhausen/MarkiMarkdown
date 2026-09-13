@@ -30,9 +30,9 @@ test('the very first launch shows a welcome note and invites a first folder', as
   await expect(page.locator('.pm-content')).toContainText('Welcome', { timeout: 15000 })
   await expect(page.locator('.cm-content')).toContainText('# Welcome')
 
-  // the strip is empty apart from the two add buttons, and the coachmark points at folders
-  await expect(page.locator('.tile-add')).toHaveCount(2)
-  await expect(page.getByRole('button', { name: 'Add an agent' })).toBeVisible()
+  // the strip is empty apart from the add button and the board button, and the coachmark points at the board
+  await expect(page.locator('.tile-add')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Team board', exact: true })).toBeVisible()
   await expect(page.locator('.coachmark')).toContainText('Funky Bunch')
 
   // it must actually be on screen, not clipped away by the narrow strip
@@ -45,7 +45,10 @@ test('the very first launch shows a welcome note and invites a first folder', as
     return hit && mark.contains(hit) ? 'visible' : 'covered or clipped'
   })
   expect(reallyVisible).toBe('visible')
-  await expect(page.getByRole('button', { name: 'Choose a folder' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open the team board' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open the team board' }).click()
+  await expect(page.getByRole('dialog', { name: 'Team board' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Team board' })).toContainText('Nothing here yet')
 
   if (SHOT) await page.screenshot({ path: join(SHOT, 'marki-05-firstrun.png') })
 

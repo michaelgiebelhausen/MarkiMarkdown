@@ -13,8 +13,8 @@ test('the packaged application starts, edits and files a note', async () => {
   const root = mkdtempSync(join(tmpdir(), 'marki-pkg-'))
   const userData = join(root, 'userData')
   const downloads = join(root, 'downloads')
-  const inbox = join(root, 'Inbox')
-  for (const dir of [userData, downloads, inbox]) mkdirSync(dir, { recursive: true })
+  const raw = join(root, 'raw')
+  for (const dir of [userData, downloads, raw]) mkdirSync(dir, { recursive: true })
 
   writeFileSync(
     join(userData, 'settings.json'),
@@ -22,9 +22,10 @@ test('the packaged application starts, edits and files a note', async () => {
       seenCoachmark: true,
       autosave: true,
       members: [
-        { id: 'f1', kind: 'folder', name: 'Inbox', emoji: '\u{1F4E5}', path: inbox, stamp: { tags: [] } },
-        { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', folderIds: ['f1'] }
-      ]
+        { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
+        { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') }
+      ],
+      bunches: [{ id: 'b1', name: 'study', emoji: '\u{1F465}', rawPath: raw, agentIds: ['a1'], artifactIds: ['x1'] }]
     }),
     'utf8'
   )
@@ -54,17 +55,17 @@ test('the packaged application starts, edits and files a note', async () => {
   await expect(page.locator('.cm-content')).toContainText('Edited in the packaged app.')
 
   // file it
-  await page.getByRole('button', { name: 'librarian agent' }).click()
-  await page.getByRole('button', { name: /File to 1 place/ }).click()
-  await expect(page.locator('.toast')).toContainText('Filed in', { timeout: 25000 })
+  await page.getByRole('button', { name: 'study bunch' }).click()
+  await page.getByRole('button', { name: 'File to study' }).click()
+  await expect(page.locator('.toast')).toContainText('Filed to study', { timeout: 25000 })
 
-  const filed = join(inbox, 'packaged-note.md')
+  const filed = join(raw, 'packaged-note.md')
   expect(existsSync(filed)).toBe(true)
   const content = readFileSync(filed, 'utf8')
-  expect(content).toContain('agents: [librarian]')
+  expect(content).toContain('bunch: study')
   expect(content).toContain('Edited in the packaged app.')
   expect(content).toContain('| a | b |')
-  expect(existsSync(join(inbox, 'log.md'))).toBe(true)
+  expect(existsSync(join(raw, 'log.md'))).toBe(false)
 
   expect(errors).toEqual([])
 
