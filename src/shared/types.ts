@@ -1,5 +1,7 @@
 /** Shared type contracts between main, preload and renderer. Types only - no behaviour. */
 
+export type MemberKind = 'agent' | 'artifact'
+
 /** A destination folder in the Funky Bunch. */
 export interface FolderMember {
   id: string
