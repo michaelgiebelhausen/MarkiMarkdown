@@ -33,6 +33,7 @@ export function prepare(): Dirs {
   for (const dir of [dirs.userData, dirs.downloads, dirs.raw, dirs.agent, dirs.artifact]) {
     mkdirSync(dir, { recursive: true })
   }
+  // CLAUDE.md exists for the kind-proposal test in board.spec.ts
   writeFileSync(join(dirs.agent, 'CLAUDE.md'), '# librarian\n', 'utf8')
   return dirs
 }

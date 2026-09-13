@@ -65,6 +65,7 @@ test('the packaged application starts, edits and files a note', async () => {
   expect(content).toContain('bunch: study')
   expect(content).toContain('Edited in the packaged app.')
   expect(content).toContain('| a | b |')
+  // v1 wrote a folder log; v2 must not
   expect(existsSync(join(raw, 'log.md'))).toBe(false)
 
   expect(errors).toEqual([])

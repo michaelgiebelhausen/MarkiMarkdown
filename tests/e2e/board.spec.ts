@@ -47,6 +47,8 @@ test('clicking a square with exactly one bunch opens that bunch', async () => {
   const dialog = h.page.getByRole('dialog', { name: 'Edit bunch' })
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('input').first()).toHaveValue('study')
+  await expect(dialog.getByRole('checkbox', { name: /librarian/ })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: /thesis/ })).toBeChecked()
   expect(h.errors).toEqual([])
 })
 
@@ -103,4 +105,5 @@ test('adding a folder with a CLAUDE.md proposes agent', async () => {
     dirs.artifact
   )
   expect(other).toBe('artifact')
+  expect(h.errors).toEqual([])
 })

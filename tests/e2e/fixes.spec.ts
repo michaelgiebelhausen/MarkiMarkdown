@@ -95,7 +95,7 @@ test('the stamp written at filing survives the next save', async () => {
   await h.page.locator('.cm-content').click()
   await h.page.keyboard.press('Control+End')
   await h.page.keyboard.type('\nA later line.')
-  await h.page.waitForTimeout(3200)
+  await expect.poll(() => readFileSync(filed, 'utf8'), { timeout: 10000 }).toContain('A later line.')
 
   const after = readFileSync(filed, 'utf8')
   expect(after).toContain('bunch: study')
