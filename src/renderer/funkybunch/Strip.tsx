@@ -3,10 +3,10 @@ import type { Plan, Tile } from './selection'
 
 interface Props {
   plan: Plan
-  onToggle: (id: string) => void
-  onAddFolder: () => void
-  onAddAgent: () => void
-  onEdit: (id: string) => void
+  onSelect: (id: string) => void
+  onAddBunch: () => void
+  onEditBunch: (id: string) => void
+  onOpenBoard: () => void
   onSettings: () => void
   onDropNote: (id: string) => void
   showCoachmark: boolean
@@ -16,53 +16,44 @@ interface Props {
 function tileClass(tile: Tile): string {
   const parts = ['tile']
   if (tile.picked) parts.push('tile-picked')
-  if (tile.implied) parts.push('tile-implied')
   if (tile.unavailable) parts.push('tile-unavailable')
+  if (tile.empty) parts.push('tile-empty')
   return parts.join(' ')
 }
 
-function tileTitle(tile: Tile, plan: Plan): string {
-  if (tile.kind === 'agent') {
-    const reads = plan.tiles.filter((t) => t.kind === 'folder')
-    void reads
-    return `${tile.name}${tile.dotted ? ' - already on this note' : ''}`
-  }
-  const bits = [tile.name]
-  if (tile.dotted) bits.push('this note lives here')
-  else if (tile.sibling) bits.push('another copy lives here')
-  if (tile.unavailable) bits.push('cannot be reached')
+function tileTitle(tile: Tile): string {
+  const bits = [`${tile.name} - ${tile.memberCount} member${tile.memberCount === 1 ? '' : 's'}`]
+  if (tile.dotted) bits.push('this note was last filed here')
+  if (tile.empty) bits.push('add an agent or an artifact first')
+  if (tile.unavailable) bits.push('raw folder cannot be reached')
   return bits.join(' - ')
 }
 
-function TileButton({
+function BunchTile({
   tile,
-  plan,
-  onToggle,
+  onSelect,
   onEdit,
   onDropNote
 }: {
   tile: Tile
-  plan: Plan
-  onToggle: (id: string) => void
+  onSelect: (id: string) => void
   onEdit: (id: string) => void
   onDropNote: (id: string) => void
 }) {
   return (
     <button
       className={tileClass(tile)}
-      title={tileTitle(tile, plan)}
-      aria-label={`${tile.name}${tile.kind === 'folder' ? ' folder' : ' agent'}`}
+      title={tileTitle(tile)}
+      aria-label={`${tile.name} bunch`}
       aria-pressed={tile.picked}
-      onClick={() => onToggle(tile.id)}
+      onClick={() => onSelect(tile.id)}
       onContextMenu={(event) => {
         event.preventDefault()
         onEdit(tile.id)
       }}
       onDragOver={(event) => {
-        if (tile.kind === 'folder') {
-          event.preventDefault()
-          event.currentTarget.classList.add('tile-drop')
-        }
+        event.preventDefault()
+        event.currentTarget.classList.add('tile-drop')
       }}
       onDragLeave={(event) => event.currentTarget.classList.remove('tile-drop')}
       onDrop={(event) => {
@@ -75,7 +66,6 @@ function TileButton({
         {tile.emoji}
       </span>
       {tile.dotted && <span className="tile-dot" aria-hidden="true" />}
-      {!tile.dotted && tile.sibling && <span className="tile-dot tile-dot-faint" aria-hidden="true" />}
       {tile.unavailable && (
         <span className="tile-warn" aria-hidden="true">
           !
@@ -87,77 +77,57 @@ function TileButton({
 
 export function Strip({
   plan,
-  onToggle,
-  onAddFolder,
-  onAddAgent,
-  onEdit,
+  onSelect,
+  onAddBunch,
+  onEditBunch,
+  onOpenBoard,
   onSettings,
   onDropNote,
   showCoachmark,
   onDismissCoachmark
 }: Props) {
-  const agents = plan.tiles.filter((t) => t.kind === 'agent')
-  const folders = plan.tiles.filter((t) => t.kind === 'folder')
-
   // The strip scrolls, which would clip an absolutely positioned bubble, so the
   // coachmark is positioned against the viewport instead and follows the + button.
-  const addFolderWrap = useRef<HTMLDivElement>(null)
+  const addWrap = useRef<HTMLDivElement>(null)
   const [coachTop, setCoachTop] = useState(96)
 
   useEffect(() => {
     if (!showCoachmark) return
     const place = () => {
-      const rect = addFolderWrap.current?.getBoundingClientRect()
+      const rect = addWrap.current?.getBoundingClientRect()
       if (rect) setCoachTop(Math.max(52, Math.min(rect.top - 6, window.innerHeight - 190)))
     }
     place()
     window.addEventListener('resize', place)
     return () => window.removeEventListener('resize', place)
-  }, [showCoachmark, folders.length, agents.length])
+  }, [showCoachmark, plan.tiles.length])
 
   return (
     <nav className="strip" aria-label="Funky Bunch">
       <div className="strip-section">
-        <span className="strip-glyph" title="Agents - who should know about this note">
-          🤖
+        <span className="strip-glyph" title="Bunches - who this note is for">
+          👥
         </span>
-        {agents.map((tile) => (
-          <TileButton
-            key={tile.id}
-            tile={tile}
-            plan={plan}
-            onToggle={onToggle}
-            onEdit={onEdit}
-            onDropNote={onDropNote}
-          />
+        {plan.tiles.map((tile) => (
+          <BunchTile key={tile.id} tile={tile} onSelect={onSelect} onEdit={onEditBunch} onDropNote={onDropNote} />
         ))}
-        <button className="tile tile-add" onClick={onAddAgent} title="Add an agent" aria-label="Add an agent">
-          +
-        </button>
-      </div>
-
-      <div className="strip-divider" />
-
-      <div className="strip-section">
-        <span className="strip-glyph" title="Folders - where this note should live">
-          📁
-        </span>
-        {folders.map((tile) => (
-          <TileButton
-            key={tile.id}
-            tile={tile}
-            plan={plan}
-            onToggle={onToggle}
-            onEdit={onEdit}
-            onDropNote={onDropNote}
-          />
-        ))}
-        <div className="tile-wrap" ref={addFolderWrap}>
-          <button className="tile tile-add" onClick={onAddFolder} title="Add a folder" aria-label="Add a folder">
+        <div className="tile-wrap" ref={addWrap}>
+          <button className="tile tile-add" onClick={onAddBunch} title="Make a bunch" aria-label="Make a bunch">
             +
           </button>
         </div>
       </div>
+
+      <div className="strip-divider" />
+
+      <button
+        className="tile strip-board"
+        onClick={onOpenBoard}
+        title="Team board - your agents and artifacts"
+        aria-label="Team board"
+      >
+        ⊞
+      </button>
 
       <div className="strip-spacer" />
       <button className="strip-gear" onClick={onSettings} title="Settings" aria-label="Settings">
@@ -167,11 +137,10 @@ export function Strip({
       {showCoachmark && (
         <div className="coachmark" style={{ top: coachTop }}>
           <p>
-            Your <strong>Funky Bunch</strong> lives here. Add a folder to file notes into, then add the agents
-            that read it.
+            Your <strong>Funky Bunch</strong> lives here. Add an agent, add an artifact, then make a bunch.
           </p>
-          <button className="btn btn-primary" onClick={onAddFolder}>
-            Choose a folder
+          <button className="btn btn-primary" onClick={onOpenBoard}>
+            Open the team board
           </button>
           <button className="btn btn-quiet" onClick={onDismissCoachmark}>
             Later

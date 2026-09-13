@@ -234,6 +234,32 @@ button:focus-visible,
 }
 .tile-add:hover { border-color: var(--accent); color: var(--accent); }
 
+.tile-empty { opacity: 0.55; }
+.strip-board { font-size: 17px; color: var(--muted); }
+.strip-board:hover { color: var(--accent); }
+
+/* ---------------- team board ---------------- */
+
+.board-scroll { overflow-x: auto; padding-bottom: 4px; }
+.board { border-collapse: separate; border-spacing: 4px; }
+.board th, .board td { text-align: center; font-size: 12.5px; padding: 4px 6px; border-radius: 6px; font-weight: 500; }
+.board-corner { width: 90px; }
+.board-agent { background: var(--accent-soft); min-width: 64px; cursor: context-menu; }
+.board-artifact { text-align: left; white-space: nowrap; cursor: context-menu; }
+.board-name { display: block; font-size: 11px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-artifact .board-name { display: inline; margin-left: 4px; max-width: none; }
+.board-cell {
+  width: 100%; min-width: 48px; height: 30px;
+  border: 1px solid var(--line); border-radius: 6px;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.board-cell:hover { border-color: var(--accent); color: var(--text); }
+.board-cell-hot { color: var(--text); font-weight: 600; background: var(--accent-soft); }
+.board-cell-bunch { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.board-warn { color: var(--danger); font-weight: 700; margin-left: 3px; }
+.board-empty { padding: 18px 8px; text-align: center; color: var(--muted); }
+.board-empty p { margin: 0 0 12px; }
+
 .coachmark {
   position: fixed; left: 62px; z-index: 30;
   width: 232px; padding: 12px;
