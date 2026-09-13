@@ -131,6 +131,10 @@ Rules:
 
 ## UI
 
+The editor itself does not change. Raw Markdown on the left and the rendered view on the right,
+scroll sync, the block tint on both panes, the bubble menu and GFM task lists all stay exactly as
+shipped in 1.0. This design only touches the strip, its dialogs and Settings.
+
 ### Strip
 
 Top to bottom: one tile per bunch, a plus tile that opens the bunch dialog, a board button, a
