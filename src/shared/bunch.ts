@@ -18,7 +18,7 @@ export interface BunchStamp {
 export function membersOf(bunch: Bunch, members: Member[]): { agents: Member[]; artifacts: Member[] } {
   const byId = new Map(members.map((m) => [m.id, m]))
   const pick = (ids: string[], kind: MemberKind): Member[] =>
-    ids.map((id) => byId.get(id)).filter((m): m is Member => m !== undefined && m.kind === kind)
+    [...new Set(ids)].map((id) => byId.get(id)).filter((m): m is Member => m !== undefined && m.kind === kind)
   return { agents: pick(bunch.agentIds, 'agent'), artifacts: pick(bunch.artifactIds, 'artifact') }
 }
 

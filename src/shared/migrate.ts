@@ -35,7 +35,10 @@ function asBunch(b: Loose): Bunch {
  * Folders become artifacts. Agents keep their name and emoji but have no folder until
  * the student picks one. Each agent that read folders becomes a bunch of that agent
  * and those artifacts, with the raw folder left for the student to choose. Nothing on
- * disk outside settings.json changes, and running this twice is harmless.
+ * disk outside settings.json changes, and running this twice is harmless. The 1.0
+ * `mirrorAgentsAsTags` value is deliberately discarded rather than carried over: every
+ * 1.0 file persisted an explicit `false`, but the product decision for 2.0 is that tag
+ * mirroring defaults to on.
  */
 export function migrateSettings(raw: unknown): Settings {
   const parsed: Loose = isLoose(raw) ? raw : {}
@@ -45,35 +48,53 @@ export function migrateSettings(raw: unknown): Settings {
   void legacyMembers
 
   if (Array.isArray(parsed.bunches)) {
+    const seenIds = new Set<string>()
+    const members: Member[] = []
+    for (const m of list) {
+      const member = asMember(m)
+      if (!member || member.id === '' || seenIds.has(member.id)) continue
+      seenIds.add(member.id)
+      members.push(member)
+    }
     return {
       ...DEFAULT_SETTINGS,
       ...(rest as Partial<Settings>),
-      members: list.map(asMember).filter((m): m is Member => m !== null),
+      members,
       bunches: parsed.bunches.filter(isLoose).map(asBunch)
     }
   }
 
-  const members: Member[] = []
+  const seenIds = new Set<string>()
+  const keptEntries: Loose[] = []
   for (const m of list) {
-    if (m.kind === 'folder') {
-      members.push({ id: str(m.id), kind: 'artifact', name: str(m.name, 'Folder'), emoji: str(m.emoji, '📁'), path: str(m.path) })
-    } else if (m.kind === 'agent') {
-      members.push({ id: str(m.id), kind: 'agent', name: str(m.name, 'agent'), emoji: str(m.emoji, '🤖'), path: '' })
-    }
+    const id = str(m.id)
+    if (id === '' || seenIds.has(id)) continue
+    if (m.kind !== 'folder' && m.kind !== 'agent' && m.kind !== 'artifact') continue
+    seenIds.add(id)
+    keptEntries.push(m)
   }
+
+  const members: Member[] = keptEntries.map((m) => {
+    const id = str(m.id)
+    if (m.kind === 'agent') {
+      return { id, kind: 'agent', name: str(m.name, 'agent'), emoji: str(m.emoji, '🤖'), path: str(m.path) }
+    }
+    return { id, kind: 'artifact', name: str(m.name, 'Folder'), emoji: str(m.emoji, '📁'), path: str(m.path) }
+  })
   const artifactIds = members.filter((m) => m.kind === 'artifact').map((m) => m.id)
 
   const bunches: Bunch[] = []
-  for (const m of list) {
+  for (const m of keptEntries) {
     if (m.kind !== 'agent') continue
-    const folderIds = strings(m.folderIds).filter((id) => artifactIds.includes(id))
+    const id = str(m.id)
+    const folderIds = strings(m.folderIds).filter((fid) => artifactIds.includes(fid))
     if (folderIds.length === 0) continue
     bunches.push({
-      id: `b-${str(m.id)}`,
+      id: `b-${id}`,
       name: str(m.name, 'agent'),
       emoji: str(m.emoji, '🤖'),
       rawPath: '',
-      agentIds: [str(m.id)],
+      agentIds: [id],
       artifactIds: folderIds
     })
   }

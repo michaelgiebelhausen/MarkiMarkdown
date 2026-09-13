@@ -81,3 +81,40 @@ describe('migrateSettings with rubbish', () => {
     expect(migrateSettings('nope').bunches).toEqual([])
   })
 })
+
+describe('migrateSettings with 2.0-shaped members but no bunches key', () => {
+  test('keeps agent paths and passes artifacts through, producing no bunches', () => {
+    const out = migrateSettings({
+      members: [
+        { id: 'a1', kind: 'agent', name: 'coach', emoji: '🎓', path: '/me/agents/coach' },
+        { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '📕', path: '/me/artifacts/thesis' }
+      ]
+    })
+    expect(out.members).toEqual([
+      { id: 'a1', kind: 'agent', name: 'coach', emoji: '🎓', path: '/me/agents/coach' },
+      { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '📕', path: '/me/artifacts/thesis' }
+    ])
+    expect(out.bunches).toEqual([])
+  })
+})
+
+describe('migrateSettings with duplicate ids', () => {
+  test('drops a member whose id repeats, keeping the first', () => {
+    const out = migrateSettings({
+      members: [
+        { id: 'a1', kind: 'agent', name: 'first', emoji: '🎓', folderIds: [] },
+        { id: 'a1', kind: 'agent', name: 'second', emoji: '🤖', folderIds: [] }
+      ]
+    })
+    expect(out.members).toHaveLength(1)
+    expect(out.members[0].name).toBe('first')
+  })
+})
+
+describe('migrateSettings with members absent (1.0 file)', () => {
+  test('migrates to empty members and bunches', () => {
+    const out = migrateSettings({ autosave: true })
+    expect(out.members).toEqual([])
+    expect(out.bunches).toEqual([])
+  })
+})

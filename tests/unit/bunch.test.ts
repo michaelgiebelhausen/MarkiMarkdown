@@ -19,6 +19,10 @@ describe('membersOf', () => {
     expect(agents.map((m) => m.id)).toEqual(['a1', 'a2'])
     expect(artifacts.map((m) => m.id)).toEqual(['x1'])
   })
+
+  test('dedupes repeated ids', () => {
+    expect(membersOf({ ...bunch, agentIds: ['a1', 'a1'] }, members).agents.map((m) => m.id)).toEqual(['a1'])
+  })
 })
 
 describe('buildStamp', () => {
