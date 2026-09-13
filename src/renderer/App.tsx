@@ -6,13 +6,15 @@ import { RenderedPane, type RenderedCommands } from './editors/RenderedPane'
 import { SyncController } from './editors/sync'
 import { PropertiesPanel } from './frontmatter/PropertiesPanel'
 import { Strip } from './funkybunch/Strip'
-import { FolderDialog, AgentDialog } from './funkybunch/MemberDialogs'
+import { MemberDialog } from './funkybunch/MemberDialog'
+import { BunchDialog } from './funkybunch/BunchDialog'
+import { TeamBoard } from './funkybunch/TeamBoard'
 import { SettingsDialog } from './ui/SettingsDialog'
 import { HelpDialog } from './ui/HelpDialog'
 import { PromptDialog } from './ui/PromptDialog'
 import { TopBar, type ViewMode } from './ui/TopBar'
 import { ToastStack, type ToastMessage } from './ui/Toast'
-import { emptySelection, planFiling, toggle, type SelectionInput } from './funkybunch/selection'
+import { planFiling } from './funkybunch/selection'
 import { baseName, dirName, samePath } from '@shared/paths'
 import {
   parseFrontMatter,
@@ -22,7 +24,9 @@ import {
 } from '@shared/markdown/frontmatter'
 import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtToMd'
 import { tidyMarkdown } from '@shared/markdown/tidy'
-import type { AgentMember, FolderMember, Member, Settings } from '@shared/types'
+import { buildStamp } from '@shared/bunch'
+import { lastBunchFor } from '@shared/ledger'
+import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
 const sync = new SyncController()
@@ -40,30 +44,25 @@ function nowLocalIso(): string {
   )
 }
 
-function nowStamp(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-const isFolder = (m: Member): m is FolderMember => m.kind === 'folder'
-const isAgent = (m: Member): m is AgentMember => m.kind === 'agent'
+type DialogState =
+  | { kind: 'member'; existing?: Member; presetKind?: MemberKind; from?: 'board' }
+  | { kind: 'bunch'; existing?: Bunch; preset?: { agentIds: string[]; artifactIds: string[] }; from?: 'board' }
+  | { kind: 'board' }
+  | { kind: 'settings' }
+  | { kind: 'help' }
+  | null
 
 export default function App() {
   const doc = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [selection, setSelection] = useState<SelectionInput>(emptySelection([]))
+  const [selectedBunchId, setSelectedBunchId] = useState<string | null>(null)
+  const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [view, setView] = useState<ViewMode>('split')
   const [toasts, setToasts] = useState<ToastMessage[]>([])
-  const [dialog, setDialog] = useState<
-    | { kind: 'folder'; existing?: FolderMember }
-    | { kind: 'agent'; existing?: AgentMember }
-    | { kind: 'settings' }
-    | { kind: 'help' }
-    | null
-  >(null)
+  const [dialog, setDialog] = useState<DialogState>(null)
   const [busy, setBusy] = useState('')
-  const [missingFolders, setMissingFolders] = useState<string[]>([])
+  const [missingRaw, setMissingRaw] = useState<string[]>([])
+  const [missingMemberIds, setMissingMemberIds] = useState<string[]>([])
   const commands = useRef<RenderedCommands | null>(null)
   const codeCommands = useRef<CodeCommands | null>(null)
   const aiRun = useRef(0)
@@ -81,26 +80,23 @@ export default function App() {
     setToasts((current) => current.filter((t) => t.id !== id))
   }, [])
 
-  /* ---------------- settings ---------------- */
+  /* ---------------- settings and ledger ---------------- */
 
   useEffect(() => {
-    window.marki.settings.read().then((loaded) => {
-      setSettings(loaded)
-      setSelection((current) => ({ ...current, members: loaded.members }))
+    window.marki.settings.read().then(setSettings)
+    window.marki.ledger.read().then((result) => {
+      if (result.ok) setLedger(result.entries)
     })
   }, [])
 
   const saveSettings = useCallback(async (patch: Partial<Settings>) => {
     const result = await window.marki.settings.write(patch)
-    if (result.ok) {
-      setSettings(result.settings)
-      setSelection((current) => ({ ...current, members: result.settings.members }))
-    }
+    if (result.ok) setSettings(result.settings)
     return result
   }, [])
 
   const members = settings?.members ?? []
-  const folders = members.filter(isFolder)
+  const bunches = settings?.bunches ?? []
 
   /* ---------------- note identity ---------------- */
 
@@ -109,85 +105,57 @@ export default function App() {
     return parseFrontMatter(doc.frontMatterRaw)
   }, [doc.frontMatterRaw])
 
-  const noteAgents = useMemo(() => {
-    if (!frontMatter.ok) return []
-    const value = frontMatter.data.agents
-    if (Array.isArray(value)) return value.map(String)
-    if (typeof value === 'string') return value.split(',').map((v) => v.trim()).filter(Boolean)
-    return []
-  }, [frontMatter])
-
   const noteId = frontMatter.ok && typeof frontMatter.data.id === 'string' ? frontMatter.data.id : ''
 
-  const currentFolderPaths = useMemo(
-    () => doc.paths.map(dirName),
-    [doc.paths]
-  )
-
-  /**
-   * Toggling and planning must both see where the note currently lives, otherwise
-   * clicking a folder the note is already in reads as "add" instead of "remove".
-   */
-  const withContext = useCallback(
-    (input: SelectionInput): SelectionInput => ({
-      ...input,
-      members,
-      currentPaths: currentFolderPaths,
-      currentAgents: noteAgents
-    }),
-    [members, currentFolderPaths, noteAgents]
-  )
+  const lastBunchId = useMemo(() => lastBunchFor(ledger, noteId), [ledger, noteId])
 
   const plan = useMemo(
-    () => planFiling(withContext(selection), missingFolders),
-    [selection, withContext, missingFolders]
+    () => planFiling({ bunches, members, selectedId: selectedBunchId, lastBunchId, missingRawPaths: missingRaw }),
+    [bunches, members, selectedBunchId, lastBunchId, missingRaw]
   )
 
-  const toggleTile = useCallback(
-    (id: string) => setSelection((current) => toggle(withContext(current), id)),
-    [withContext]
-  )
+  const selectBunch = useCallback((id: string) => {
+    setSelectedBunchId((current) => (current === id ? null : id))
+  }, [])
 
   /* ---------------- check folders really exist ---------------- */
 
+  const rawKey = bunches.map((b) => b.rawPath).join('|')
   useEffect(() => {
-    if (folders.length === 0) return
-    let cancelled = false
-    const check = async () => {
-      const missing: string[] = []
-      for (const folder of folders) {
-        const result = await window.marki.filing.preflight({
-          content: '',
-          fileName: 'probe.md',
-          noteId: 'probe',
-          agentNames: [],
-          currentPaths: [],
-          addFolders: [{ name: folder.name, path: folder.path }],
-          allFolderNames: [],
-          now: ''
-        })
-        if (result.ok && result.result.unavailable.length > 0) missing.push(folder.path)
-      }
-      if (!cancelled) setMissingFolders(missing)
+    const paths = bunches.map((b) => b.rawPath).filter((p) => p.length > 0)
+    if (paths.length === 0) {
+      setMissingRaw([])
+      return
     }
-    check()
+    let cancelled = false
+    window.marki.members.missingPaths(paths).then((result) => {
+      if (!cancelled && result.ok) setMissingRaw(result.missing)
+    })
     return () => {
       cancelled = true
     }
-  }, [folders.map((f) => f.path).join('|')])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawKey])
 
-  /* ---------------- siblings ---------------- */
-
+  const memberKey = members.map((m) => m.path).join('|')
   useEffect(() => {
-    if (!noteId || folders.length === 0) return
+    const withPath = members.filter((m) => m.path.length > 0)
+    const withoutPath = members.filter((m) => m.path.length === 0).map((m) => m.id)
+    if (withPath.length === 0) {
+      setMissingMemberIds(withoutPath)
+      return
+    }
     let cancelled = false
-    window.marki.filing
-      .findSiblings(folders.map((f) => f.path), noteId, doc.paths)
-      .then((result) => {
-        if (cancelled || !result.ok) return
-        setSelection((current) => ({ ...current, siblingPaths: result.paths.map(dirName) }))
-      })
-  }, [noteId, doc.paths.join('|'), folders.map((f) => f.path).join('|')])
+    window.marki.members.missingPaths(withPath.map((m) => m.path)).then((result) => {
+      if (cancelled || !result.ok) return
+      const gone = withPath.filter((m) => result.missing.some((p) => samePath(p, m.path))).map((m) => m.id)
+      setMissingMemberIds([...withoutPath, ...gone])
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberKey])
 
   /* ---------------- opening files ---------------- */
 
@@ -199,7 +167,7 @@ export default function App() {
         return
       }
       store.load(result.file)
-      setSelection((current) => ({ ...current, pickedIds: [], droppedIds: [], siblingPaths: [] }))
+      setSelectedBunchId(null)
     },
     [pushToast]
   )
@@ -306,31 +274,14 @@ export default function App() {
       filingInFlight.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, doc, folders, noteId, frontMatter, settings, pushToast, openFile])
+  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile])
 
   const performFiling = useCallback(async () => {
-
-    let fileName = doc.fileName
-    if (doc.paths.length === 0 || doc.isPlainText) {
-      const suggested = suggestName(doc.body, fileName)
-      fileName = suggested
-    }
-
-    const stampTags: string[] = []
-    for (const id of [...plan.addFolderIds, ...plan.keepFolderIds]) {
-      const folder = folders.find((f) => f.id === id)
-      for (const tag of folder?.stamp?.tags ?? []) if (!stampTags.includes(tag)) stampTags.push(tag)
-    }
-    if (settings?.mirrorAgentsAsTags) {
-      for (const agent of plan.agentNames) stampTags.push(`agent/${agent}`)
-    }
-
-    const id = noteId || ulid()
-    const created =
-      frontMatter.ok && typeof frontMatter.data.created === 'string' ? frontMatter.data.created : nowLocalIso()
+    const bunch = plan.bunch
+    if (!bunch || !settings) return
 
     // Broken YAML makes stampNote a no-op, which would file a note with no id and no
-    // agents while the log claimed otherwise. Say so instead of filing something wrong.
+    // agents. Say so instead of filing something wrong.
     if (!frontMatter.ok) {
       pushToast({
         text: 'The properties at the top of this note cannot be read, so it cannot be filed yet. Fix them on the left, or press Repair above the note.',
@@ -340,52 +291,40 @@ export default function App() {
       return
     }
 
+    // A bunch made before its raw folder was chosen gets one now, and remembers it.
+    let rawPath = bunch.rawPath
+    if (rawPath.length === 0) {
+      if (settings.defaultRawPath) {
+        rawPath = settings.defaultRawPath
+      } else {
+        const picked = await window.marki.dialogs.pickFolder()
+        if (!picked.ok) return
+        rawPath = picked.path
+      }
+      await saveSettings({ bunches: bunches.map((b) => (b.id === bunch.id ? { ...b, rawPath } : b)) })
+    }
+
+    let fileName = doc.fileName
+    if (doc.paths.length === 0 || doc.isPlainText) fileName = suggestName(doc.body, fileName)
+
+    const id = noteId || ulid()
+    const created =
+      frontMatter.ok && typeof frontMatter.data.created === 'string' ? frontMatter.data.created : nowLocalIso()
+
+    const who = buildStamp(bunch, members, settings.mirrorMembersAsTags)
     const content = stampNote(store.fullText(), {
       id,
       // the plain preset keeps front matter minimal; OKF wants a type on every concept
-      type: settings?.frontMatterPreset === 'basic' ? undefined : 'note',
+      type: settings.frontMatterPreset === 'basic' ? undefined : 'note',
       filed: nowLocalIso(),
       created,
-      tags: stampTags,
-      agents: plan.agentNames
+      tags: who.tags,
+      bunch: who.bunch,
+      agents: who.agents,
+      agentPaths: who.agentPaths,
+      artifacts: who.artifacts,
+      artifactPaths: who.artifactPaths
     })
-
-    const addFolders = plan.addFolderIds
-      .map((fid) => folders.find((f) => f.id === fid))
-      .filter((f): f is FolderMember => Boolean(f))
-      .map((f) => ({ name: f.name, path: f.path }))
-
-    const removeFolders = plan.removeFolderIds
-      .map((fid) => folders.find((f) => f.id === fid))
-      .filter((f): f is FolderMember => Boolean(f))
-      .map((f) => ({
-        name: f.name,
-        path: f.path,
-        filePath: doc.paths.find((p) => samePath(dirName(p), f.path)) ?? ''
-      }))
-      .filter((r) => r.filePath.length > 0)
-
-    const allFolderNames = [...plan.addFolderIds, ...plan.keepFolderIds]
-      .map((fid) => folders.find((f) => f.id === fid)?.name)
-      .filter((n): n is string => Boolean(n))
-
-    const basePlan = {
-      content,
-      fileName,
-      noteId: id,
-      agentNames: plan.agentNames,
-      currentPaths: doc.paths.filter((p) =>
-        plan.keepFolderIds.some((fid) => {
-          const folder = folders.find((f) => f.id === fid)
-          return folder ? samePath(dirName(p), folder.path) : false
-        })
-      ),
-      originalPath: doc.originalPath,
-      addFolders,
-      removeFolders,
-      allFolderNames,
-      now: nowStamp()
-    }
 
     // Belt and braces: if the stamp did not actually land, do not write anything.
     const stampedFront = splitFrontMatter(content).raw
@@ -398,34 +337,30 @@ export default function App() {
       return
     }
 
+    // A note opened from a .txt has no Markdown home yet; its .txt is what gets moved.
+    const currentPath = doc.paths[0] ?? doc.originalPath
+    const basePlan = { content, fileName, noteId: id, currentPath, raw: { name: bunch.name, path: rawPath } }
+
     const check = await window.marki.filing.preflight(basePlan)
     if (!check.ok) {
       pushToast({ text: check.message, tone: 'warn' })
       return
     }
+    if (check.result.unavailable) {
+      pushToast({ text: check.result.unavailable, tone: 'warn' })
+      return
+    }
 
     let conflictChoice: 'replace' | 'keepBoth' | 'cancel' = 'replace'
-    const clashes = check.result.conflicts.filter((c) => !c.sameId)
-    if (clashes.length > 0) {
+    if (check.result.conflict && !check.result.conflict.sameId) {
       const answer = await window.marki.dialogs.confirm({
-        message: `${clashes[0].folderName} already has a different note called ${fileName}.`,
+        message: `${bunch.name} already has a different note called ${fileName}.`,
         detail: 'You can replace it, keep both, or stop here.',
         buttons: ['Keep both', 'Replace', 'Cancel'],
         danger: true
       })
       if (!answer.ok || answer.index === 2) return
       conflictChoice = answer.index === 0 ? 'keepBoth' : 'replace'
-    }
-
-    if (plan.removeFolderIds.length > 0) {
-      const names = plan.removeFolderIds.map((fid) => folders.find((f) => f.id === fid)?.name).join(', ')
-      const answer = await window.marki.dialogs.confirm({
-        message: `Remove the copy in ${names}?`,
-        detail: 'It goes to the Trash, so you can still get it back.',
-        buttons: ['Remove', 'Cancel'],
-        danger: true
-      })
-      if (!answer.ok || answer.index === 1) return
     }
 
     setBusy('Filing...')
@@ -438,9 +373,9 @@ export default function App() {
     }
 
     const outcome = result.outcome
-    if (!outcome.ok) {
+    if (!outcome.ok || !outcome.writtenPath) {
       pushToast({
-        text: outcome.failures.map((f) => f.message).join(' '),
+        text: outcome.failure ?? 'The note could not be filed.',
         tone: 'warn',
         actionLabel: 'Try again',
         onAction: () => void runFiling()
@@ -448,15 +383,24 @@ export default function App() {
       return
     }
 
-    const undoOriginal = doc.originalPath
-    store.setFileName(fileName)
-    store.afterFiling(outcome.written.map((w) => w.path), content)
-    setSelection((current) => ({ ...current, pickedIds: [], droppedIds: [] }))
+    const cameFrom = currentPath
+    const writtenPath = outcome.writtenPath
+    store.setFileName(baseName(writtenPath) || fileName)
+    store.afterFiling([writtenPath], content)
+    setSelectedBunchId(null)
 
-    const where = allFolderNames.join(', ')
-    const forWho = plan.agentNames.length > 0 ? ` for ${plan.agentNames.join(', ')}` : ''
+    const entry: LedgerEntry = {
+      noteId: id,
+      bunchId: bunch.id,
+      agentIds: who.agentIds,
+      artifactIds: who.artifactIds,
+      filedAt: nowLocalIso()
+    }
+    const appended = await window.marki.ledger.append(entry)
+    if (appended.ok) setLedger(appended.entries)
+
     pushToast({
-      text: outcome.notice || `Filed in ${where}${forWho}.`,
+      text: outcome.notice || `Filed to ${bunch.name}.`,
       actionLabel: 'Undo',
       onAction: async () => {
         // Undo goes back to before the filing, so anything typed since would go too.
@@ -472,15 +416,14 @@ export default function App() {
         }
         const undone = await window.marki.filing.undo()
         if (undone.ok) {
-          pushToast({ text: undone.result.message })
-          const back = undoOriginal
-          if (back) void openFile(back)
+          pushToast({ text: undone.result.message, tone: undone.result.ok ? undefined : 'warn' })
+          if (undone.result.ok && cameFrom) void openFile(cameFrom)
         } else {
           pushToast({ text: undone.message, tone: 'warn' })
         }
       }
     })
-  }, [plan, doc, folders, noteId, frontMatter, settings, pushToast, openFile])
+  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile, saveSettings])
 
   // Dropping the note on a tile selects it first; file once that has taken effect.
   useEffect(() => {
@@ -628,7 +571,16 @@ export default function App() {
 
   useEffect(() => window.marki.on.menuAction(handleAction), [handleAction])
 
-  /* ---------------- member editing ---------------- */
+  /* ---------------- roster and bunch editing ---------------- */
+
+  // A dialog opened from the team board goes back to the board when it closes.
+  const closeDialog = useCallback(() => {
+    setDialog((current) =>
+      current && (current.kind === 'member' || current.kind === 'bunch') && current.from === 'board'
+        ? { kind: 'board' }
+        : null
+    )
+  }, [])
 
   const upsertMember = useCallback(
     async (member: Member) => {
@@ -636,29 +588,69 @@ export default function App() {
         ? members.map((m) => (m.id === member.id ? member : m))
         : [...members, member]
       await saveSettings({ members: next, seenCoachmark: true })
-      setDialog(null)
+      closeDialog()
     },
-    [members, saveSettings]
+    [members, saveSettings, closeDialog]
   )
 
   const removeMember = useCallback(
     async (id: string) => {
-      const next = members
-        .filter((m) => m.id !== id)
-        .map((m) => (isAgent(m) ? { ...m, folderIds: m.folderIds.filter((f) => f !== id) } : m))
-      await saveSettings({ members: next })
-      setDialog(null)
+      await saveSettings({
+        members: members.filter((m) => m.id !== id),
+        bunches: bunches.map((b) => ({
+          ...b,
+          agentIds: b.agentIds.filter((x) => x !== id),
+          artifactIds: b.artifactIds.filter((x) => x !== id)
+        }))
+      })
+      closeDialog()
     },
-    [members, saveSettings]
+    [members, bunches, saveSettings, closeDialog]
   )
 
-  const editMember = useCallback(
+  const upsertBunch = useCallback(
+    async (bunch: Bunch) => {
+      const next = bunches.some((b) => b.id === bunch.id)
+        ? bunches.map((b) => (b.id === bunch.id ? bunch : b))
+        : [...bunches, bunch]
+      await saveSettings({ bunches: next, seenCoachmark: true })
+      closeDialog()
+    },
+    [bunches, saveSettings, closeDialog]
+  )
+
+  const removeBunch = useCallback(
+    async (id: string) => {
+      await saveSettings({ bunches: bunches.filter((b) => b.id !== id) })
+      setSelectedBunchId((current) => (current === id ? null : current))
+      closeDialog()
+    },
+    [bunches, saveSettings, closeDialog]
+  )
+
+  const editBunch = useCallback(
+    (id: string) => {
+      const bunch = bunches.find((b) => b.id === id)
+      if (bunch) setDialog({ kind: 'bunch', existing: bunch })
+    },
+    [bunches]
+  )
+
+  const editMemberFromBoard = useCallback(
     (id: string) => {
       const member = members.find((m) => m.id === id)
-      if (!member) return
-      setDialog(isFolder(member) ? { kind: 'folder', existing: member } : { kind: 'agent', existing: member })
+      if (member) setDialog({ kind: 'member', existing: member, from: 'board' })
     },
     [members]
+  )
+
+  const openCell = useCallback(
+    (agentId: string, artifactId: string) => {
+      const matches = bunches.filter((b) => b.agentIds.includes(agentId) && b.artifactIds.includes(artifactId))
+      if (matches.length === 1) setDialog({ kind: 'bunch', existing: matches[0], from: 'board' })
+      else setDialog({ kind: 'bunch', preset: { agentIds: [agentId], artifactIds: [artifactId] }, from: 'board' })
+    },
+    [bunches]
   )
 
   /* ---------------- keyboard ---------------- */
@@ -672,13 +664,13 @@ export default function App() {
         const tile = plan.tiles[index]
         if (tile) {
           event.preventDefault()
-          toggleTile(tile.id)
+          selectBunch(tile.id)
         }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [plan.tiles, toggleTile])
+  }, [plan.tiles, selectBunch])
 
   // Typing bursts collapse into one undo step.
   useEffect(() => {
@@ -688,36 +680,35 @@ export default function App() {
 
   const knownTags = useMemo(() => {
     const tags = new Set<string>()
-    for (const folder of folders) for (const tag of folder.stamp?.tags ?? []) tags.add(tag)
     const inline = doc.body.match(/(?:^|\s)#([A-Za-z0-9][\w/-]*)/g) ?? []
     for (const raw of inline) tags.add(raw.trim().slice(1))
     return [...tags]
-  }, [folders, doc.body])
+  }, [doc.body])
 
   const placeNames = useMemo(
     () =>
       doc.paths.map((p) => {
         const dir = dirName(p)
-        return folders.find((f) => samePath(f.path, dir))?.name ?? (baseName(dir) || dir)
+        return bunches.find((b) => b.rawPath.length > 0 && samePath(b.rawPath, dir))?.name ?? (baseName(dir) || dir)
       }),
-    [doc.paths, folders]
+    [doc.paths, bunches]
   )
 
   if (!settings) return <div className="booting">Opening MarkiMarkdown...</div>
 
-  const showCoachmark = !settings.seenCoachmark && folders.length === 0
+  const showCoachmark = !settings.seenCoachmark && members.length === 0 && bunches.length === 0
 
   return (
     <div className="app">
       <Strip
         plan={plan}
-        onToggle={toggleTile}
-        onAddFolder={() => setDialog({ kind: 'folder' })}
-        onAddAgent={() => setDialog({ kind: 'agent' })}
-        onEdit={editMember}
+        onSelect={selectBunch}
+        onAddBunch={() => setDialog({ kind: 'bunch' })}
+        onEditBunch={editBunch}
+        onOpenBoard={() => setDialog({ kind: 'board' })}
         onSettings={() => setDialog({ kind: 'settings' })}
         onDropNote={(id) => {
-          toggleTile(id)
+          setSelectedBunchId(id)
           setFileWhenReady(true)
         }}
         showCoachmark={showCoachmark}
@@ -733,12 +724,12 @@ export default function App() {
           fileLabel={plan.fileLabel}
           canFile={plan.canFile}
           blockedReason={plan.blockedReason}
-          hasPending={plan.pendingCount > 0}
+          hasPending={plan.bunch !== null}
           view={view}
           busy={busy}
           onSetView={setView}
           onFile={() => void runFiling()}
-          onClearSelection={() => setSelection((current) => ({ ...current, pickedIds: [], droppedIds: [] }))}
+          onClearSelection={() => setSelectedBunchId(null)}
           onMenu={handleAction}
           onCancelBusy={() => {
             aiRun.current += 1
@@ -798,22 +789,39 @@ export default function App() {
 
       <ToastStack toasts={toasts} dismiss={dismissToast} />
 
-      {dialog?.kind === 'folder' && (
-        <FolderDialog
-          existing={dialog.existing}
-          siblings={folders}
-          onSave={upsertMember}
-          onDelete={dialog.existing ? () => void removeMember(dialog.existing!.id) : undefined}
+      {dialog?.kind === 'board' && (
+        <TeamBoard
+          members={members}
+          bunches={bunches}
+          ledger={ledger}
+          missingMemberIds={missingMemberIds}
+          onAddMember={(kind) => setDialog({ kind: 'member', presetKind: kind, from: 'board' })}
+          onEditMember={editMemberFromBoard}
+          onCell={openCell}
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog?.kind === 'agent' && (
-        <AgentDialog
+      {dialog?.kind === 'member' && (
+        <MemberDialog
+          key={dialog.existing?.id ?? 'new-member'}
           existing={dialog.existing}
-          folders={folders}
+          presetKind={dialog.presetKind}
+          siblings={members}
           onSave={upsertMember}
           onDelete={dialog.existing ? () => void removeMember(dialog.existing!.id) : undefined}
-          onClose={() => setDialog(null)}
+          onClose={closeDialog}
+        />
+      )}
+      {dialog?.kind === 'bunch' && (
+        <BunchDialog
+          key={dialog.existing?.id ?? 'new-bunch'}
+          existing={dialog.existing}
+          preset={dialog.preset}
+          members={members}
+          defaultRawPath={settings.defaultRawPath}
+          onSave={upsertBunch}
+          onDelete={dialog.existing ? () => void removeBunch(dialog.existing!.id) : undefined}
+          onClose={closeDialog}
         />
       )}
       {dialog?.kind === 'settings' && (
@@ -861,7 +869,7 @@ function suggestName(body: string, fallback: string): string {
   if (!title) return fallback
   const slug = title
     .toLowerCase()
-    .replace(/[^a-z0-9\u00c0-\u024f]+/g, '-')
+    .replace(/[^a-z0-9À-ɏ]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
   return slug ? `${slug}.md` : fallback
