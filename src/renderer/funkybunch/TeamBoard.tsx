@@ -53,7 +53,7 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
       <p className="dialog-lead">
         <strong>Agents</strong> across the top are folders that do work. <strong>Artifacts</strong> down the side
         are folders that hold what the work produces. A number is how many notes were filed to both. Click a
-        square to make or open the bunch that pairs them. Right-click a name to edit it.
+        square to make or open the bunch that pairs them. Click a name to edit it.
       </p>
 
       {members.length === 0 ? (
@@ -83,11 +83,16 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
                       onEditMember(agent.id)
                     }}
                   >
-                    <span aria-hidden="true">{agent.emoji}</span>
-                    <span className="board-name">
-                      {agent.name}
-                      {warn(agent.id)}
-                    </span>
+                    <button
+                      type="button"
+                      className="board-head"
+                      onClick={() => onEditMember(agent.id)}
+                      title="Edit or remove"
+                    >
+                      <span aria-hidden="true">{agent.emoji}</span>
+                      <span className="board-name">{agent.name}</span>
+                    </button>
+                    {warn(agent.id)}
                   </th>
                 ))}
               </tr>
@@ -104,11 +109,16 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
                       onEditMember(artifact.id)
                     }}
                   >
-                    <span aria-hidden="true">{artifact.emoji}</span>
-                    <span className="board-name">
-                      {artifact.name}
-                      {warn(artifact.id)}
-                    </span>
+                    <button
+                      type="button"
+                      className="board-head"
+                      onClick={() => onEditMember(artifact.id)}
+                      title="Edit or remove"
+                    >
+                      <span aria-hidden="true">{artifact.emoji}</span>
+                      <span className="board-name">{artifact.name}</span>
+                    </button>
+                    {warn(artifact.id)}
                   </th>
                   {agents.map((agent) => {
                     const n = counts.get(pairKey(agent.id, artifact.id)) ?? 0

@@ -40,9 +40,12 @@ function BunchTile({
   onEdit: (id: string) => void
   onDropNote: (id: string) => void
 }) {
+  const [over, setOver] = useState(false)
+  const classes = tileClass(tile) + (over ? ' tile-drop' : '')
+
   return (
     <button
-      className={tileClass(tile)}
+      className={classes}
       title={tileTitle(tile)}
       aria-label={`${tile.name} bunch`}
       aria-pressed={tile.picked}
@@ -52,13 +55,15 @@ function BunchTile({
         onEdit(tile.id)
       }}
       onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('text/marki-note')) return
         event.preventDefault()
-        event.currentTarget.classList.add('tile-drop')
+        setOver(true)
       }}
-      onDragLeave={(event) => event.currentTarget.classList.remove('tile-drop')}
+      onDragLeave={() => setOver(false)}
       onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('text/marki-note')) return
         event.preventDefault()
-        event.currentTarget.classList.remove('tile-drop')
+        setOver(false)
         onDropNote(tile.id)
       }}
     >

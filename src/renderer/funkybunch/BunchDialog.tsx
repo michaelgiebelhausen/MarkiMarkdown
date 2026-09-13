@@ -89,7 +89,7 @@ export function BunchDialog({
       <Field label="Name">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="thesis" />
       </Field>
-      <Field label="Icon">
+      <Field label="Icon" group>
         <EmojiPicker options={BUNCH_EMOJI} value={emoji} onChange={setEmoji} />
       </Field>
       {!rawPath && (
@@ -105,7 +105,7 @@ export function BunchDialog({
           </button>
         </div>
       </Field>
-      <Field label="Agents">
+      <Field label="Agents" group>
         <div className="folder-checks">
           {agents.length === 0 && <p className="muted">No agents yet. Add one from the team board.</p>}
           {agents.map((agent) => (
@@ -122,7 +122,7 @@ export function BunchDialog({
           ))}
         </div>
       </Field>
-      <Field label="Artifacts">
+      <Field label="Artifacts" group>
         <div className="folder-checks">
           {artifacts.length === 0 && <p className="muted">No artifacts yet. Add one from the team board.</p>}
           {artifacts.map((artifact) => (

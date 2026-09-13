@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal, Field } from '@renderer/ui/Modal'
 import type { Member, MemberKind } from '@shared/types'
 import { baseName, samePath } from '@shared/paths'
@@ -58,6 +58,14 @@ export function MemberDialog({
   const [emoji, setEmoji] = useState(existing?.emoji ?? defaultEmoji(existing?.kind ?? presetKind ?? 'artifact'))
   const [path, setPath] = useState(existing?.path ?? '')
   const [error, setError] = useState('')
+  const touchedKind = useRef(false)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const switchKind = (next: MemberKind) => {
     setKind(next)
@@ -76,7 +84,8 @@ export function MemberDialog({
     // Only guess when the student has not already said what this is.
     if (!existing && presetKind === undefined) {
       const proposed = await window.marki.members.proposeKind(result.path)
-      if (proposed.ok) switchKind(proposed.kind)
+      if (!mounted.current) return
+      if (proposed.ok && !touchedKind.current) switchKind(proposed.kind)
     }
   }
 
@@ -90,10 +99,15 @@ export function MemberDialog({
       setError(`${clash.name} already points at that folder.`)
       return
     }
+    const trimmed = name.trim()
+    const finalName =
+      kind === 'agent'
+        ? trimmed.toLowerCase().replace(/\s+/g, '-') || 'agent'
+        : trimmed || 'Folder'
     onSave({
       id: existing?.id ?? `${kind === 'agent' ? 'a' : 'x'}${Date.now().toString(36)}`,
       kind,
-      name: name.trim() || (kind === 'agent' ? 'agent' : 'Folder'),
+      name: finalName,
       emoji,
       path
     })
@@ -134,13 +148,16 @@ export function MemberDialog({
           </button>
         </div>
       </Field>
-      <Field label="This folder is">
+      <Field label="This folder is" group>
         <div className="segmented" role="group" aria-label="Kind">
           <button
             type="button"
             className={kind === 'agent' ? 'seg seg-on' : 'seg'}
             aria-pressed={kind === 'agent'}
-            onClick={() => switchKind('agent')}
+            onClick={() => {
+              touchedKind.current = true
+              switchKind('agent')
+            }}
           >
             An agent
           </button>
@@ -148,7 +165,10 @@ export function MemberDialog({
             type="button"
             className={kind === 'artifact' ? 'seg seg-on' : 'seg'}
             aria-pressed={kind === 'artifact'}
-            onClick={() => switchKind('artifact')}
+            onClick={() => {
+              touchedKind.current = true
+              switchKind('artifact')
+            }}
           >
             An artifact
           </button>
@@ -161,7 +181,7 @@ export function MemberDialog({
           placeholder={kind === 'agent' ? 'study-coach' : 'thesis'}
         />
       </Field>
-      <Field label="Icon">
+      <Field label="Icon" group>
         <EmojiPicker options={kind === 'agent' ? AGENT_EMOJI : ARTIFACT_EMOJI} value={emoji} onChange={setEmoji} />
       </Field>
       {error && <p className="error">{error}</p>}

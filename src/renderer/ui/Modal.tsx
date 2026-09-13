@@ -42,7 +42,26 @@ export function Modal({
   )
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  children,
+  group
+}: {
+  label: string
+  hint?: string
+  children: ReactNode
+  group?: boolean
+}) {
+  if (group) {
+    return (
+      <div className="field" role="group" aria-label={label}>
+        <span className="field-label">{label}</span>
+        {children}
+        {hint && <span className="field-hint">{hint}</span>}
+      </div>
+    )
+  }
   return (
     <label className="field">
       <span className="field-label">{label}</span>
