@@ -110,6 +110,12 @@ export function parseFrontMatter(raw: string): ParseResult {
   return { ok: true, data: js as FrontMatterData }
 }
 
+/** Keys a second-brain script greps line by line, so they are written one item per line. */
+const BLOCK_LIST_KEYS = new Set(['agents', 'agent_paths', 'artifacts', 'artifact_paths'])
+
+/** Tags in these namespaces are written by filing and replaced on every filing. */
+const MIRRORED_TAG = /^(agent|artifact)\//
+
 function applyPatch(doc: Document, patch: FrontMatterPatch): void {
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue
@@ -119,7 +125,7 @@ function applyPatch(doc: Document, patch: FrontMatterPatch): void {
     }
     if (Array.isArray(value)) {
       const node = doc.createNode(value) as YAMLSeq
-      node.flow = true
+      node.flow = !BLOCK_LIST_KEYS.has(key)
       doc.set(key, node)
       continue
     }
@@ -161,8 +167,13 @@ export interface Stamp {
   filed: string
   created: string
   tags?: string[]
-  agents?: string[]
   title?: string
+  /** Set when filing to a bunch. Replaces bunch, agents, agent_paths, artifacts and artifact_paths wholesale. */
+  bunch?: string
+  agents?: string[]
+  agentPaths?: string[]
+  artifacts?: string[]
+  artifactPaths?: string[]
 }
 
 function normaliseTags(value: unknown): string[] {
@@ -183,10 +194,15 @@ export function stampNote(text: string, stamp: Stamp): string {
   if (!existing.ok) return text
 
   const current = existing.data
-  const tags = normaliseTags(current.tags)
+  const filing = stamp.bunch !== undefined
+  const tags = normaliseTags(current.tags).filter((tag) => !filing || !MIRRORED_TAG.test(tag))
   for (const tag of normaliseTags(stamp.tags)) {
     if (!tags.includes(tag)) tags.push(tag)
   }
+
+  // undefined leaves a key alone, null removes it, a list writes it
+  const list = (value: string[] | undefined): string[] | null | undefined =>
+    value === undefined ? undefined : value.length > 0 ? value : null
 
   const patch: FrontMatterPatch = {
     id: typeof current.id === 'string' && current.id.length > 0 ? undefined : stamp.id,
@@ -198,7 +214,11 @@ export function stampNote(text: string, stamp: Stamp): string {
       typeof current.created === 'string' && current.created.length > 0 ? undefined : stamp.created,
     filed: stamp.filed,
     tags: tags.length > 0 ? tags : undefined,
-    agents: stamp.agents === undefined ? undefined : stamp.agents.length > 0 ? stamp.agents : null,
+    bunch: stamp.bunch === undefined ? undefined : stamp.bunch.length > 0 ? stamp.bunch : null,
+    agents: list(stamp.agents),
+    agent_paths: list(stamp.agentPaths),
+    artifacts: list(stamp.artifacts),
+    artifact_paths: list(stamp.artifactPaths),
     title: stamp.title
   }
 

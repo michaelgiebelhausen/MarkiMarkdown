@@ -214,9 +214,9 @@ describe('stampNote', () => {
     expect(parsed.data.tags).toEqual(['ai'])
   })
 
-  test('writes agents when given and omits the key when the list is empty', () => {
+  test('writes agents as a block list and omits the key when the list is empty', () => {
     const withAgents = stampNote('body\n', { ...base, agents: ['librarian'] })
-    expect(withAgents).toContain('agents: [librarian]')
+    expect(withAgents).toContain('agents:\n  - librarian')
     const without = stampNote('body\n', { ...base, agents: [] })
     expect(without).not.toContain('agents')
   })
@@ -278,5 +278,72 @@ describe('splitFrontMatter must not swallow a leading divider', () => {
     // otherwise the properties panel could never offer to repair it
     const r = splitFrontMatter('---\ntitle: Notes: week 2\n---\nBody\n')
     expect(r.raw).toBe('---\ntitle: Notes: week 2\n---\n')
+  })
+})
+
+describe('stampNote with a bunch', () => {
+  const base = { id: 'X', type: 'note', filed: 'n', created: 'c' }
+  const who = {
+    bunch: 'thesis',
+    agents: ['study-coach', 'research-assistant'],
+    agentPaths: ['C:/Users/me/agents/study-coach', 'C:/Users/me/agents/research-assistant'],
+    artifacts: ['thesis-chapter-3'],
+    artifactPaths: ['C:/Users/me/artifacts/thesis-chapter-3']
+  }
+
+  function data(out: string) {
+    const parsed = parseFrontMatter(String(splitFrontMatter(out).raw))
+    expect(parsed.ok).toBe(true)
+    return parsed.ok ? parsed.data : {}
+  }
+
+  test('writes five parallel keys as block lists', () => {
+    const out = stampNote('body\n', { ...base, ...who })
+    expect(out).toContain('bunch: thesis')
+    expect(out).toContain('agents:\n  - study-coach\n  - research-assistant')
+    expect(out).toContain('agent_paths:\n  - C:/Users/me/agents/study-coach')
+    expect(out).toContain('artifacts:\n  - thesis-chapter-3')
+    expect(out).toContain('artifact_paths:\n  - C:/Users/me/artifacts/thesis-chapter-3')
+    const parsed = data(out)
+    expect(parsed.agents).toEqual(who.agents)
+    expect(parsed.agent_paths).toEqual(who.agentPaths)
+    expect(parsed.artifacts).toEqual(who.artifacts)
+    expect(parsed.artifact_paths).toEqual(who.artifactPaths)
+    expect(out.endsWith('body\n')).toBe(true)
+  })
+
+  test('refiling replaces every stamp key wholesale', () => {
+    const src =
+      '---\nbunch: old\nagents:\n  - gone\nagent_paths:\n  - /old/gone\nartifacts:\n  - stale\nartifact_paths:\n  - /old/stale\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who })
+    expect(out).not.toContain('old')
+    expect(out).not.toContain('gone')
+    expect(out).not.toContain('stale')
+    expect(data(out).bunch).toBe('thesis')
+  })
+
+  test('an empty list removes the key instead of writing []', () => {
+    const src = '---\nbunch: old\nartifacts:\n  - stale\nartifact_paths:\n  - /old/stale\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who, artifacts: [], artifactPaths: [] })
+    expect(out).not.toContain('artifacts')
+    expect(out).not.toContain('artifact_paths')
+    expect(out).not.toContain('[]')
+  })
+
+  test('an agent with no folder yet still gets a slot in agent_paths', () => {
+    const out = stampNote('body\n', { ...base, ...who, agents: ['a', 'b'], agentPaths: ['', '/b'] })
+    expect(data(out).agent_paths).toEqual(['', '/b'])
+  })
+
+  test('mirrored tags from the last filing are replaced, hand-written tags stay', () => {
+    const src = '---\ntags: [ai, agent/old, artifact/stale]\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who, tags: ['agent/study-coach', 'artifact/thesis-chapter-3'] })
+    expect(data(out).tags).toEqual(['ai', 'agent/study-coach', 'artifact/thesis-chapter-3'])
+  })
+
+  test('a stamp without a bunch leaves mirrored tags alone', () => {
+    const src = '---\ntags: [ai, agent/old]\n---\nbody\n'
+    const out = stampNote(src, { ...base, tags: ['extra'] })
+    expect(data(out).tags).toEqual(['ai', 'agent/old', 'extra'])
   })
 })
