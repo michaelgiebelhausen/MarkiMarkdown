@@ -841,6 +841,7 @@ export default function App() {
           preset={dialog.preset}
           members={members}
           defaultRawPath={settings.defaultRawPath}
+          missingMemberIds={missingMemberIds}
           onSave={upsertBunch}
           onDelete={dialog.existing ? () => void removeBunch(dialog.existing!.id) : undefined}
           onClose={closeDialog}

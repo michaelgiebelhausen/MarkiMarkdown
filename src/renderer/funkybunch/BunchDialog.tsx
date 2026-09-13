@@ -10,6 +10,7 @@ export function BunchDialog({
   preset,
   members,
   defaultRawPath,
+  missingMemberIds,
   onSave,
   onDelete,
   onClose
@@ -19,6 +20,7 @@ export function BunchDialog({
   preset?: { agentIds: string[]; artifactIds: string[] }
   members: Member[]
   defaultRawPath?: string
+  missingMemberIds: string[]
   onSave: (bunch: Bunch) => void
   onDelete?: () => void
   onClose: () => void
@@ -117,6 +119,11 @@ export function BunchDialog({
               />
               <span>
                 {agent.emoji} {agent.name}
+                {missingMemberIds.includes(agent.id) && (
+                  <span className="board-warn" title="This folder cannot be found">
+                    !
+                  </span>
+                )}
               </span>
             </label>
           ))}
@@ -134,6 +141,11 @@ export function BunchDialog({
               />
               <span>
                 {artifact.emoji} {artifact.name}
+                {missingMemberIds.includes(artifact.id) && (
+                  <span className="board-warn" title="This folder cannot be found">
+                    !
+                  </span>
+                )}
               </span>
             </label>
           ))}

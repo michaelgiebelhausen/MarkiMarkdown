@@ -118,6 +118,11 @@ test('a member whose folder is missing is flagged on the board but filing still 
   await expect(board.locator('.board-warn')).toHaveCount(1)
   await board.getByRole('button', { name: 'Done' }).click()
 
+  await h.page.getByRole('button', { name: 'study bunch' }).click({ button: 'right' })
+  const bunchDialog = h.page.getByRole('dialog', { name: 'Edit bunch' })
+  await expect(bunchDialog.locator('.board-warn')).toHaveCount(1)
+  await h.page.keyboard.press('Escape')
+
   await h.page.getByRole('button', { name: 'study bunch' }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
