@@ -34,3 +34,8 @@ function normalise(path: string): string {
   while (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1)
   return out.toLowerCase()
 }
+
+/** Paths written into front matter use forward slashes on every platform so scripts can grep them. */
+export function toForwardSlashes(path: string): string {
+  return path.split(BACKSLASH).join('/')
+}

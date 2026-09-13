@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { baseName, dirName, samePath } from '@shared/paths'
+import { baseName, dirName, samePath, toForwardSlashes } from '@shared/paths'
 
 const WIN = 'C:\\Users\\sam\\Downloads\\lecture notes.md'
 const POSIX = '/Users/sam/Downloads/lecture notes.md'
@@ -55,5 +55,21 @@ describe('samePath', () => {
 describe('round trip', () => {
   test('dirName plus baseName reconstructs a Windows path', () => {
     expect(samePath(dirName(WIN) + '\\' + baseName(WIN), WIN)).toBe(true)
+  })
+})
+
+describe('toForwardSlashes', () => {
+  const BS = String.fromCharCode(92)
+
+  test('turns every backslash into a forward slash', () => {
+    expect(toForwardSlashes(`C:${BS}Users${BS}me${BS}agents`)).toBe('C:/Users/me/agents')
+  })
+
+  test('leaves a POSIX path alone', () => {
+    expect(toForwardSlashes('/home/me/agents')).toBe('/home/me/agents')
+  })
+
+  test('leaves an empty string empty', () => {
+    expect(toForwardSlashes('')).toBe('')
   })
 })
