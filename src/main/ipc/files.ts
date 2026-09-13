@@ -1,5 +1,5 @@
 import { promises as fsp, constants } from 'node:fs'
-import { join, dirname, basename, extname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { shell } from 'electron'
 import log from 'electron-log/main'
@@ -128,39 +128,4 @@ export const diskOps: FileOps = {
       return null
     }
   }
-}
-
-/** Finds other copies of the same note, so the strip can show a faint dot. */
-export async function findSiblings(
-  folders: string[],
-  noteId: string,
-  selfPaths: string[]
-): Promise<string[]> {
-  const found: string[] = []
-  for (const folder of folders) {
-    try {
-      const entries = await fsp.readdir(folder, { withFileTypes: true })
-      let scanned = 0
-      for (const entry of entries) {
-        if (scanned > 500) break
-        if (!entry.isFile() || extname(entry.name).toLowerCase() !== '.md') continue
-        if (entry.name === 'log.md') continue
-        scanned += 1
-        const full = join(folder, entry.name)
-        if (selfPaths.includes(full)) continue
-        try {
-          const head = (await fsp.readFile(full, 'utf8')).slice(0, 800)
-          if (head.includes(noteId)) {
-            found.push(full)
-            break
-          }
-        } catch {
-          /* unreadable file - skip */
-        }
-      }
-    } catch {
-      /* folder gone - skip */
-    }
-  }
-  return found
 }
