@@ -311,7 +311,10 @@ ipcMain.handle('filing:preflight', async (_e, plan: FilingPlan) => {
 ipcMain.handle('filing:run', async (event, plan: FilingPlan) => {
   try {
     const outcome = await runFiling(diskOps, plan)
-    undoByWindow.set(event.sender.id, outcome.undo)
+    // A failed filing must not erase the undo record of whatever filing succeeded
+    // before it - unless this attempt itself displaced a note into the trash, which
+    // needs its own undo to bring that note back.
+    if (outcome.ok || outcome.undo.replaced) undoByWindow.set(event.sender.id, outcome.undo)
     return { ok: true as const, outcome }
   } catch (error) {
     return fail(translateFsError(error, 'that raw folder'))
@@ -356,7 +359,7 @@ ipcMain.handle('members:missing-paths', async (_e, paths: string[]) => {
       missing.push(path)
     }
   }
-  return ok({ missing })
+  return ok({ missing: [...new Set(missing)] })
 })
 
 ipcMain.handle('shell:show-item', (_e, path: string) => {

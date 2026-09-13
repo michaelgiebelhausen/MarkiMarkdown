@@ -17,6 +17,8 @@ class FakeFs implements FileOps {
   failWriteAt = new Set<string>()
   readOnlyDirs = new Set<string>()
   failTrashCount = 0
+  failCreateAt = new Set<string>()
+  failReadAt = new Set<string>()
 
   async dirExists(p: string) {
     return this.dirs.has(p)
@@ -28,6 +30,7 @@ class FakeFs implements FileOps {
     return this.files.has(p)
   }
   async readText(p: string) {
+    if (this.failReadAt.has(p)) throw new Error('EBUSY: file is locked')
     const v = this.files.get(p)
     if (v === undefined) throw new Error('ENOENT')
     return v
@@ -37,6 +40,7 @@ class FakeFs implements FileOps {
     this.files.set(p, text)
   }
   async createExclusive(p: string, text: string) {
+    if (this.failCreateAt.has(p)) return false
     if (this.files.has(p)) return false
     this.files.set(p, text)
     return true
@@ -179,6 +183,31 @@ describe('runFiling', () => {
     expect(out.undo.written).toBeUndefined()
   })
 
+  test('a note already elsewhere in raw is rewritten in place even when its base name is taken', async () => {
+    fs.files.set('/sb/raw/lecture-notes-2.md', 'BEFORE')
+    fs.files.set('/sb/raw/lecture-notes.md', '---\nid: OTHER\n---\nsomeone else')
+    const out = await runFiling(fs, plan({ currentPath: '/sb/raw/lecture-notes-2.md' }))
+    expect(out.ok).toBe(true)
+    expect(out.writtenPath).toBe('/sb/raw/lecture-notes-2.md')
+    expect(fs.files.get('/sb/raw/lecture-notes-2.md')).toContain('STAMPED CONTENT')
+    expect(fs.files.get('/sb/raw/lecture-notes.md')).toContain('someone else')
+    expect(fs.trashed).toEqual([])
+  })
+
+  test('a note already in raw keeps its old file name even after the note is renamed', async () => {
+    fs.files.set('/sb/raw/old-name.md', 'BEFORE')
+    const out = await runFiling(fs, plan({ currentPath: '/sb/raw/old-name.md', fileName: 'new-name.md' }))
+    expect(out.ok).toBe(true)
+    expect(out.writtenPath).toBe('/sb/raw/old-name.md')
+    expect(fs.files.get('/sb/raw/old-name.md')).toContain('STAMPED CONTENT')
+    expect(fs.files.has('/sb/raw/new-name.md')).toBe(false)
+  })
+
+  test('an in-place rewrite with nothing readable there records a null before', async () => {
+    const out = await runFiling(fs, plan({ currentPath: '/sb/raw/lecture-notes.md' }))
+    expect(out.undo.rewritten?.before).toBeNull()
+  })
+
   test('keepBoth writes beside the clash', async () => {
     fs.files.set('/sb/raw/lecture-notes.md', '---\nid: OTHER\n---\nsomeone else')
     const out = await runFiling(fs, plan({ conflictChoice: 'keepBoth' }))
@@ -229,6 +258,26 @@ describe('runFiling', () => {
     expect(out.failure).toContain('could not be found')
     expect(fs.files.has('/downloads/lecture-notes.md')).toBe(true)
   })
+
+  test('a write failure after replacing tells the student the displaced note is in the trash', async () => {
+    fs.files.set('/sb/raw/lecture-notes.md', '---\nid: OTHER\n---\nsomeone else')
+    fs.failWriteAt.add('/sb/raw/lecture-notes.md')
+    const out = await runFiling(fs, plan({ conflictChoice: 'replace' }))
+    expect(out.ok).toBe(false)
+    expect(out.failure).toContain('moved to the trash')
+    expect(out.undo.replaced).toBeDefined()
+  })
+
+  test('a locked original is reported rather than silently dropped', async () => {
+    fs.failReadAt.add('/downloads/lecture-notes.md')
+    const out = await runFiling(fs, plan())
+    expect(out.ok).toBe(true)
+    expect(out.originalKept).toBe(true)
+    expect(out.notice).toContain('still where it was')
+    expect(fs.files.has('/downloads/lecture-notes.md')).toBe(true)
+    expect(fs.files.has('/sb/raw/lecture-notes.md')).toBe(true)
+    expect(out.undo.movedFrom).toBeUndefined()
+  })
 })
 
 describe('undoFiling', () => {
@@ -269,5 +318,22 @@ describe('undoFiling', () => {
     fs.files.set('/downloads/lecture-notes.md', 'a new file with the old name')
     await undoFiling(fs, out.undo)
     expect(fs.files.get('/downloads/lecture-notes.md')).toBe('a new file with the old name')
+  })
+
+  test('a filed copy is left alone when the original cannot be restored', async () => {
+    const out = await runFiling(fs, plan())
+    fs.failCreateAt.add('/downloads/lecture-notes.md')
+    const undone = await undoFiling(fs, out.undo)
+    expect(undone.ok).toBe(false)
+    expect(undone.notRestored).toEqual(['/downloads/lecture-notes.md'])
+    expect(fs.files.has('/sb/raw/lecture-notes.md')).toBe(true)
+    expect(undone.message).toContain('could not be put back')
+  })
+
+  test('undoing an in-place rewrite that had nothing before trashes the note instead of leaving an empty file', async () => {
+    const out = await runFiling(fs, plan({ currentPath: '/sb/raw/lecture-notes.md' }))
+    expect(out.undo.rewritten?.before).toBeNull()
+    await undoFiling(fs, out.undo)
+    expect(fs.files.has('/sb/raw/lecture-notes.md')).toBe(false)
   })
 })

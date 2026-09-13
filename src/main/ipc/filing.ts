@@ -9,7 +9,7 @@
  * Every disk operation goes through FileOps so the whole procedure - including the
  * ugly failure paths - can be exercised in tests without touching a real disk.
  */
-import { samePath } from '../../shared/paths'
+import { samePath, dirName } from '../../shared/paths'
 
 export interface FileOps {
   dirExists(path: string): Promise<boolean>
@@ -47,8 +47,9 @@ export interface UndoRecord {
   movedFrom?: { path: string; text: string }
   /** The new copy filing wrote, when it wrote one. */
   written?: { path: string; text: string }
-  /** The note was already in raw and was rewritten where it stood. */
-  rewritten?: { path: string; before: string; after: string }
+  /** The note was already in raw and was rewritten where it stood. `before` is null
+   *  when there was nothing readable at that path at the time of the rewrite. */
+  rewritten?: { path: string; before: string | null; after: string }
   /** A note that "replace" displaced. It is in the trash and can be put back. */
   replaced?: { path: string; text: string }
 }
@@ -125,8 +126,9 @@ export async function preflight(ops: FileOps, plan: FilingPlan): Promise<Preflig
       return { ok: false, unavailable: `${raw.name}'s raw folder cannot be written to. Check the folder's permissions.` }
     }
     const destPath = joinPath(raw.path, fileName)
-    // A file at the destination that IS this note is not a clash with anyone else.
-    if (plan.currentPath !== undefined && samePath(plan.currentPath, destPath)) return { ok: true }
+    // A note that already sits somewhere inside this raw folder is not a clash with
+    // anyone else, whatever its current file name happens to be.
+    if (plan.currentPath !== undefined && samePath(dirName(plan.currentPath), raw.path)) return { ok: true }
     if (await ops.exists(destPath)) {
       let sameId = false
       try {
@@ -188,17 +190,19 @@ export async function runFiling(ops: FileOps, plan: FilingPlan): Promise<FilingO
   }
 
   let destPath = joinPath(plan.raw.path, fileName)
-  const inPlace = plan.currentPath !== undefined && samePath(plan.currentPath, destPath)
+  const inPlace = plan.currentPath !== undefined && samePath(dirName(plan.currentPath), plan.raw.path)
   if (inPlace) destPath = plan.currentPath as string
 
   // 1. write the new copy
   try {
     if (inPlace) {
-      let before = ''
+      // Already inside this raw folder: rewrite it where it stands, under whatever
+      // name it already has. There is no clash to resolve against a name that isn't ours.
+      let before: string | null
       try {
         before = await ops.readText(destPath)
       } catch {
-        /* nothing there after all */
+        before = null
       }
       await ops.writeAtomic(destPath, plan.content)
       undo.rewritten = { path: destPath, before, after: plan.content }
@@ -222,24 +226,34 @@ export async function runFiling(ops: FileOps, plan: FilingPlan): Promise<FilingO
       undo.written = { path: destPath, text: plan.content }
     }
   } catch {
-    return { ok: false, trashed, failure: friendlyWriteError(plan.raw.name), originalKept: true, notice: '', undo }
+    const base = friendlyWriteError(plan.raw.name)
+    const failure = undo.replaced
+      ? `${base} The note that was there has been moved to the trash; Undo puts it back.`
+      : base
+    return { ok: false, trashed, failure, originalKept: true, notice: '', undo }
   }
 
   // 2. only once the new copy is safely written, retire the old location
   let originalKept = false
   let notice = ''
   if (plan.currentPath !== undefined && !inPlace) {
+    const originalPath = plan.currentPath
     try {
-      const text = await ops.readText(plan.currentPath)
-      if (await trashWithRetries(ops, plan.currentPath)) {
-        trashed.push(plan.currentPath)
-        undo.movedFrom = { path: plan.currentPath, text }
+      const text = await ops.readText(originalPath)
+      if (await trashWithRetries(ops, originalPath)) {
+        trashed.push(originalPath)
+        undo.movedFrom = { path: originalPath, text }
       } else {
         originalKept = true
         notice = 'The note was filed, but the old copy is still where it was because another program is using it.'
       }
     } catch {
-      /* already gone */
+      // The read failed - either the original is already gone (nothing to do) or it
+      // is locked and unreadable, in which case it is very much still there.
+      if (await ops.exists(originalPath)) {
+        originalKept = true
+        notice = 'The note was filed, but the old copy is still where it was because another program is using it.'
+      }
     }
   }
 
@@ -250,23 +264,30 @@ export interface UndoOutcome {
   ok: boolean
   /** Copies left in place because something else had already changed them. */
   keptChanged: string[]
+  /** The original could not be restored, so the filed copy was deliberately left alone. */
+  notRestored: string[]
   message: string
 }
 
 export async function undoFiling(ops: FileOps, undo: UndoRecord): Promise<UndoOutcome> {
   const keptChanged: string[] = []
+  const notRestored: string[] = []
 
   // put the original back, unless something already reappeared at that path
+  let restoredOriginal = true
   if (undo.movedFrom) {
     try {
-      await ops.createExclusive(undo.movedFrom.path, undo.movedFrom.text)
+      restoredOriginal = await ops.createExclusive(undo.movedFrom.path, undo.movedFrom.text)
     } catch {
-      /* leave whatever is there */
+      restoredOriginal = false
     }
+    if (!restoredOriginal) notRestored.push(undo.movedFrom.path)
   }
 
-  // remove the copy this filing wrote, but only if it is untouched
-  if (undo.written) {
+  // remove the copy this filing wrote, but only if it is untouched - and only once
+  // the original is safely back where it was, so a failed restore never leaves the
+  // student with neither copy.
+  if (undo.written && restoredOriginal) {
     try {
       if (await ops.exists(undo.written.path)) {
         const current = await ops.readText(undo.written.path)
@@ -282,8 +303,15 @@ export async function undoFiling(ops: FileOps, undo: UndoRecord): Promise<UndoOu
   if (undo.rewritten) {
     try {
       const current = await ops.readText(undo.rewritten.path)
-      if (hashText(current) !== hashText(undo.rewritten.after)) keptChanged.push(undo.rewritten.path)
-      else await ops.writeAtomic(undo.rewritten.path, undo.rewritten.before)
+      if (hashText(current) !== hashText(undo.rewritten.after)) {
+        keptChanged.push(undo.rewritten.path)
+      } else if (undo.rewritten.before === null) {
+        // There was nothing readable here before the rewrite; putting the file back
+        // means removing it, not writing an empty file in its place.
+        await trashWithRetries(ops, undo.rewritten.path)
+      } else {
+        await ops.writeAtomic(undo.rewritten.path, undo.rewritten.before)
+      }
     } catch {
       keptChanged.push(undo.rewritten.path)
     }
@@ -300,12 +328,12 @@ export async function undoFiling(ops: FileOps, undo: UndoRecord): Promise<UndoOu
     }
   }
 
-  return {
-    ok: true,
-    keptChanged,
-    message:
-      keptChanged.length === 0
+  const message =
+    notRestored.length > 0
+      ? `The note could not be put back at ${notRestored[0]}, so the filed copy was left where it is.`
+      : keptChanged.length === 0
         ? 'Put back.'
         : 'Put back. The filed copy was left alone because it had already changed.'
-  }
+
+  return { ok: notRestored.length === 0, keptChanged, notRestored, message }
 }

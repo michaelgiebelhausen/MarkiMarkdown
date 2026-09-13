@@ -8,11 +8,27 @@ function ledgerPath(): string {
   return join(app.getPath('userData'), 'ledger.json')
 }
 
-/** Every filing the app has done. Missing or unreadable means empty. */
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string')
+}
+
+function isLedgerEntry(value: unknown): value is LedgerEntry {
+  if (value === null || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.noteId === 'string' &&
+    typeof v.bunchId === 'string' &&
+    typeof v.filedAt === 'string' &&
+    isStringArray(v.agentIds) &&
+    isStringArray(v.artifactIds)
+  )
+}
+
+/** Every filing the app has done. Missing, unreadable, or malformed entries are dropped. */
 export function readLedger(): LedgerEntry[] {
   try {
     const parsed = JSON.parse(readFileSync(ledgerPath(), 'utf8')) as unknown
-    return Array.isArray(parsed) ? (parsed as LedgerEntry[]) : []
+    return Array.isArray(parsed) ? parsed.filter(isLedgerEntry) : []
   } catch {
     return []
   }
