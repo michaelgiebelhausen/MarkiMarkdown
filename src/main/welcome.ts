@@ -18,7 +18,7 @@ export const WELCOME_NOTE = [
   '',
   'Your turn:',
   '',
-  '- [ ] Open the team board on the left edge and add an agent and an artifact',
+  '- [ ] Open the team board (the grid button on the left edge) and add an agent and an artifact',
   '- [ ] Make a bunch, pick it, then press File',
   '',
   '---',

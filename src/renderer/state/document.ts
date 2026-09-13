@@ -261,4 +261,14 @@ export class DocumentStore {
     this.savedText = this.fullText()
     this.emit()
   }
+
+  /**
+   * Undoing a filing can remove the only copy this note ever had on disk (a note
+   * that was never saved anywhere before it was filed). The text on screen does not
+   * change, but it no longer has a home, so Save has to ask for one again.
+   */
+  unfile(): void {
+    this.state = { ...this.state, paths: [], originalPath: undefined }
+    this.emit()
+  }
 }

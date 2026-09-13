@@ -268,6 +268,17 @@ describe('runFiling', () => {
     expect(out.undo.replaced).toBeDefined()
   })
 
+  test('a .txt note already sitting in raw is filed into a stamped .md, not overwritten as .txt', async () => {
+    fs.files.set('/sb/raw/notes.txt', 'plain')
+    const out = await runFiling(fs, plan({ currentPath: '/sb/raw/notes.txt', fileName: 'notes.md' }))
+    expect(out.ok).toBe(true)
+    expect(out.writtenPath).toBe('/sb/raw/notes.md')
+    expect(fs.files.get('/sb/raw/notes.md')).toContain('STAMPED CONTENT')
+    expect(fs.files.has('/sb/raw/notes.txt')).toBe(false)
+    expect(fs.trashed).toContain('/sb/raw/notes.txt')
+    expect(out.undo.movedFrom).toEqual({ path: '/sb/raw/notes.txt', text: 'plain' })
+  })
+
   test('a locked original is reported rather than silently dropped', async () => {
     fs.failReadAt.add('/downloads/lecture-notes.md')
     const out = await runFiling(fs, plan())

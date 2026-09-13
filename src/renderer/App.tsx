@@ -137,7 +137,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawKey])
 
-  const memberKey = members.map((m) => m.path).join('|')
+  const memberKey = members.map((m) => m.id + ':' + m.path).join('|')
   useEffect(() => {
     const withPath = members.filter((m) => m.path.length > 0)
     const withoutPath = members.filter((m) => m.path.length === 0).map((m) => m.id)
@@ -301,7 +301,8 @@ export default function App() {
         if (!picked.ok) return
         rawPath = picked.path
       }
-      await saveSettings({ bunches: bunches.map((b) => (b.id === bunch.id ? { ...b, rawPath } : b)) })
+      const rawSave = await saveSettings({ bunches: bunches.map((b) => (b.id === bunch.id ? { ...b, rawPath } : b)) })
+      if (!rawSave.ok) pushToast({ text: rawSave.message, tone: 'warn' })
     }
 
     let fileName = doc.fileName
@@ -418,6 +419,10 @@ export default function App() {
         if (undone.ok) {
           pushToast({ text: undone.result.message, tone: undone.result.ok ? undefined : 'warn' })
           if (undone.result.ok && cameFrom) void openFile(cameFrom)
+          // A note that had never been saved anywhere has no cameFrom to reopen: the
+          // copy filing wrote is now trashed, so forget the path and make Save ask
+          // for a home again, without touching the text on screen.
+          else if (undone.result.ok) store.unfile()
         } else {
           pushToast({ text: undone.message, tone: 'warn' })
         }
@@ -587,15 +592,19 @@ export default function App() {
       const next = members.some((m) => m.id === member.id)
         ? members.map((m) => (m.id === member.id ? member : m))
         : [...members, member]
-      await saveSettings({ members: next, seenCoachmark: true })
+      const result = await saveSettings({ members: next, seenCoachmark: true })
+      if (!result.ok) {
+        pushToast({ text: result.message, tone: 'warn' })
+        return
+      }
       closeDialog()
     },
-    [members, saveSettings, closeDialog]
+    [members, saveSettings, closeDialog, pushToast]
   )
 
   const removeMember = useCallback(
     async (id: string) => {
-      await saveSettings({
+      const result = await saveSettings({
         members: members.filter((m) => m.id !== id),
         bunches: bunches.map((b) => ({
           ...b,
@@ -603,9 +612,13 @@ export default function App() {
           artifactIds: b.artifactIds.filter((x) => x !== id)
         }))
       })
+      if (!result.ok) {
+        pushToast({ text: result.message, tone: 'warn' })
+        return
+      }
       closeDialog()
     },
-    [members, bunches, saveSettings, closeDialog]
+    [members, bunches, saveSettings, closeDialog, pushToast]
   )
 
   const upsertBunch = useCallback(
@@ -613,19 +626,27 @@ export default function App() {
       const next = bunches.some((b) => b.id === bunch.id)
         ? bunches.map((b) => (b.id === bunch.id ? bunch : b))
         : [...bunches, bunch]
-      await saveSettings({ bunches: next, seenCoachmark: true })
+      const result = await saveSettings({ bunches: next, seenCoachmark: true })
+      if (!result.ok) {
+        pushToast({ text: result.message, tone: 'warn' })
+        return
+      }
       closeDialog()
     },
-    [bunches, saveSettings, closeDialog]
+    [bunches, saveSettings, closeDialog, pushToast]
   )
 
   const removeBunch = useCallback(
     async (id: string) => {
-      await saveSettings({ bunches: bunches.filter((b) => b.id !== id) })
+      const result = await saveSettings({ bunches: bunches.filter((b) => b.id !== id) })
+      if (!result.ok) {
+        pushToast({ text: result.message, tone: 'warn' })
+        return
+      }
       setSelectedBunchId((current) => (current === id ? null : current))
       closeDialog()
     },
-    [bunches, saveSettings, closeDialog]
+    [bunches, saveSettings, closeDialog, pushToast]
   )
 
   const editBunch = useCallback(
@@ -659,8 +680,9 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey
       if (!mod) return
-      if (event.shiftKey && event.key >= '1' && event.key <= '9') {
-        const index = Number(event.key) - 1
+      const digit = /^Digit([1-9])$/.exec(event.code)
+      if (event.shiftKey && digit) {
+        const index = Number(digit[1]) - 1
         const tile = plan.tiles[index]
         if (tile) {
           event.preventDefault()
@@ -869,7 +891,7 @@ function suggestName(body: string, fallback: string): string {
   if (!title) return fallback
   const slug = title
     .toLowerCase()
-    .replace(/[^a-z0-9À-ɏ]+/g, '-')
+    .replace(/[^a-z0-9\u00c0-\u024f]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
   return slug ? `${slug}.md` : fallback

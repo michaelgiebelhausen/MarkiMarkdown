@@ -97,6 +97,17 @@ function joinPath(dir: string, name: string): string {
   return dir.endsWith('/') || dir.endsWith(String.fromCharCode(92)) ? `${dir}${name}` : `${dir}${sep}${name}`
 }
 
+/**
+ * "In place" means this filing would rewrite the note where it already stands,
+ * rather than moving a copy into raw. That is only true when the note already sits
+ * inside this raw folder AND is already a Markdown file - a `.txt` note that happens
+ * to live in raw still needs a real `.md` copy written beside it, not its `.txt`
+ * silently overwritten with stamped Markdown.
+ */
+function isInPlace(currentPath: string, rawPath: string): boolean {
+  return samePath(dirName(currentPath), rawPath) && /\.(md|markdown)$/i.test(currentPath)
+}
+
 function idOf(text: string): string | null {
   const match = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)/.exec(text)
   if (!match) return null
@@ -128,7 +139,7 @@ export async function preflight(ops: FileOps, plan: FilingPlan): Promise<Preflig
     const destPath = joinPath(raw.path, fileName)
     // A note that already sits somewhere inside this raw folder is not a clash with
     // anyone else, whatever its current file name happens to be.
-    if (plan.currentPath !== undefined && samePath(dirName(plan.currentPath), raw.path)) return { ok: true }
+    if (plan.currentPath !== undefined && isInPlace(plan.currentPath, raw.path)) return { ok: true }
     if (await ops.exists(destPath)) {
       let sameId = false
       try {
@@ -190,7 +201,7 @@ export async function runFiling(ops: FileOps, plan: FilingPlan): Promise<FilingO
   }
 
   let destPath = joinPath(plan.raw.path, fileName)
-  const inPlace = plan.currentPath !== undefined && samePath(dirName(plan.currentPath), plan.raw.path)
+  const inPlace = plan.currentPath !== undefined && isInPlace(plan.currentPath, plan.raw.path)
   if (inPlace) destPath = plan.currentPath as string
 
   // 1. write the new copy
