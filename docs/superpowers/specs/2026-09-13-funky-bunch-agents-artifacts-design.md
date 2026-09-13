@@ -90,7 +90,8 @@ The student selects exactly one bunch and clicks File, or drags the open note on
 
 1. **Preflight** (existing): the raw folder must exist and be writable. A file with the same name in
    raw that carries a different note id offers replace, keep both or cancel. A bunch with no raw
-   folder prompts for one first, pre-filled from `defaultRawPath`.
+   folder adopts `defaultRawPath` when one is set, otherwise prompts for a folder; either way the
+   chosen path is saved onto the bunch.
 2. **Stamp**: rewrite the front matter block only. The body keeps its bytes.
 3. **Write once** to `<rawPath>/<fileName>`. If the note already lives in that raw folder it is saved
    in place. If it lives anywhere else it is moved there. Undo (existing) restores the previous
