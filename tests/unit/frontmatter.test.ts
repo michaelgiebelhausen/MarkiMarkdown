@@ -346,4 +346,10 @@ describe('stampNote with a bunch', () => {
     const out = stampNote(src, { ...base, tags: ['extra'] })
     expect(data(out).tags).toEqual(['ai', 'agent/old', 'extra'])
   })
+
+  test('stripping the only mirrored tag with no replacement removes the tags key', () => {
+    const src = '---\ntags: [agent/old]\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who })
+    expect(out).not.toContain('tags')
+  })
 })

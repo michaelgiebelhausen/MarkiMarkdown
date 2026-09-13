@@ -1,5 +1,6 @@
 import type { LedgerEntry } from './types'
 
+/** Member ids must not contain `|`, or two distinct pairs could collide on the same key. */
 export function pairKey(agentId: string, artifactId: string): string {
   return `${agentId}|${artifactId}`
 }
@@ -8,8 +9,8 @@ export function pairKey(agentId: string, artifactId: string): string {
 export function pairCounts(entries: LedgerEntry[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const entry of entries) {
-    for (const agentId of entry.agentIds) {
-      for (const artifactId of entry.artifactIds) {
+    for (const agentId of new Set(entry.agentIds)) {
+      for (const artifactId of new Set(entry.artifactIds)) {
         const key = pairKey(agentId, artifactId)
         counts.set(key, (counts.get(key) ?? 0) + 1)
       }

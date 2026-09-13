@@ -195,7 +195,9 @@ export function stampNote(text: string, stamp: Stamp): string {
 
   const current = existing.data
   const filing = stamp.bunch !== undefined
-  const tags = normaliseTags(current.tags).filter((tag) => !filing || !MIRRORED_TAG.test(tag))
+  const before = normaliseTags(current.tags)
+  const tags = before.filter((tag) => !filing || !MIRRORED_TAG.test(tag))
+  const stripped = filing && tags.length !== before.length
   for (const tag of normaliseTags(stamp.tags)) {
     if (!tags.includes(tag)) tags.push(tag)
   }
@@ -213,7 +215,7 @@ export function stampNote(text: string, stamp: Stamp): string {
     created:
       typeof current.created === 'string' && current.created.length > 0 ? undefined : stamp.created,
     filed: stamp.filed,
-    tags: tags.length > 0 ? tags : undefined,
+    tags: tags.length > 0 ? tags : stripped ? null : undefined,
     bunch: stamp.bunch === undefined ? undefined : stamp.bunch.length > 0 ? stamp.bunch : null,
     agents: list(stamp.agents),
     agent_paths: list(stamp.agentPaths),

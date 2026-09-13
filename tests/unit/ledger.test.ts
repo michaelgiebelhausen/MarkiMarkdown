@@ -21,6 +21,13 @@ describe('pairCounts', () => {
   test('an empty ledger has no counts', () => {
     expect(pairCounts([]).size).toBe(0)
   })
+
+  test('duplicate ids inside one entry are not double-counted', () => {
+    const dup: LedgerEntry[] = [
+      { noteId: 'n', bunchId: 'b', agentIds: ['a', 'a'], artifactIds: ['x', 'x'], filedAt: 't' }
+    ]
+    expect(pairCounts(dup).get(pairKey('a', 'x'))).toBe(1)
+  })
 })
 
 describe('lastBunchFor', () => {
