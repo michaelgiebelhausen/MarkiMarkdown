@@ -2,6 +2,16 @@
 
 export type MemberKind = 'agent' | 'artifact'
 
+/** One filing, recorded in the app's own ledger. Feeds the team board counts. */
+export interface LedgerEntry {
+  noteId: string
+  bunchId: string
+  agentIds: string[]
+  artifactIds: string[]
+  /** ISO 8601 with offset. */
+  filedAt: string
+}
+
 /** A destination folder in the Funky Bunch. */
 export interface FolderMember {
   id: string
