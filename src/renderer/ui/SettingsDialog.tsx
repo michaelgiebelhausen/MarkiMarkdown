@@ -52,14 +52,33 @@ export function SettingsDialog({
         <span>Save my notes automatically</span>
       </label>
 
-      <h3 className="section-head">Notes</h3>
+      <h3 className="section-head">Filing</h3>
+      <Field label="Default raw folder" hint="Pre-fills the raw folder when you make a bunch.">
+        <div className="row">
+          <input readOnly value={settings.defaultRawPath ?? ''} placeholder="No default yet" />
+          <button
+            className="btn btn-quiet"
+            onClick={async () => {
+              const result = await window.marki.dialogs.pickFolder()
+              if (result.ok) void onSave({ defaultRawPath: result.path })
+            }}
+          >
+            Choose...
+          </button>
+          {settings.defaultRawPath && (
+            <button className="btn btn-quiet" onClick={() => void onSave({ defaultRawPath: '' })}>
+              Clear
+            </button>
+          )}
+        </div>
+      </Field>
       <label className="check">
         <input
           type="checkbox"
-          checked={settings.mirrorAgentsAsTags}
-          onChange={(event) => void onSave({ mirrorAgentsAsTags: event.target.checked })}
+          checked={settings.mirrorMembersAsTags}
+          onChange={(event) => void onSave({ mirrorMembersAsTags: event.target.checked })}
         />
-        <span>Also add each agent as a tag, like agent/librarian (handy in Obsidian)</span>
+        <span>Also add each agent and artifact as a tag, like agent/study-coach (handy in Obsidian)</span>
       </label>
 
       <h3 className="section-head">AI clean-up</h3>
