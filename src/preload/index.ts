@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { FilingPlan, FilingOutcome, PreflightOutcome, UndoOutcome } from '../main/ipc/filing'
-import type { AiProviderStatus, LoadedFile, Settings } from '../shared/types'
+import type { AiProviderStatus, LedgerEntry, LoadedFile, MemberKind, Settings } from '../shared/types'
 
 type Ok<T> = { ok: true } & T
 type Err = { ok: false; message: string }
@@ -37,9 +37,18 @@ const api = {
       ipcRenderer.invoke('filing:preflight', plan),
     run: (plan: FilingPlan): Promise<Result<{ outcome: FilingOutcome }>> =>
       ipcRenderer.invoke('filing:run', plan),
-    undo: (): Promise<Result<{ result: UndoOutcome }>> => ipcRenderer.invoke('filing:undo'),
-    findSiblings: (folders: string[], noteId: string, selfPaths: string[]): Promise<Result<{ paths: string[] }>> =>
-      ipcRenderer.invoke('siblings:find', folders, noteId, selfPaths)
+    undo: (): Promise<Result<{ result: UndoOutcome }>> => ipcRenderer.invoke('filing:undo')
+  },
+  ledger: {
+    read: (): Promise<Result<{ entries: LedgerEntry[] }>> => ipcRenderer.invoke('ledger:read'),
+    append: (entry: LedgerEntry): Promise<Result<{ entries: LedgerEntry[] }>> =>
+      ipcRenderer.invoke('ledger:append', entry)
+  },
+  members: {
+    proposeKind: (path: string): Promise<Result<{ kind: MemberKind }>> =>
+      ipcRenderer.invoke('members:propose-kind', path),
+    missingPaths: (paths: string[]): Promise<Result<{ missing: string[] }>> =>
+      ipcRenderer.invoke('members:missing-paths', paths)
   },
   dialogs: {
     pickFolder: (): Promise<Result<{ path: string }>> => ipcRenderer.invoke('dialog:pick-folder'),

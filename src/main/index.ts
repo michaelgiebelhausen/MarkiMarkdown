@@ -3,8 +3,11 @@ import { join } from 'node:path'
 import { promises as fsp } from 'node:fs'
 import log from 'electron-log/main'
 import { readSettings, writeSettings, saveApiKey, loadApiKey } from './ipc/settings'
-import { diskOps, readFileForEditor, writeAtomic, translateFsError, findSiblings } from './ipc/files'
+import { diskOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
 import { preflight, runFiling, undoFiling, type FilingPlan, type UndoRecord } from './ipc/filing'
+import { readLedger, appendLedger } from './ipc/ledger'
+import { proposeKind } from '../shared/memberKind'
+import type { LedgerEntry } from '../shared/types'
 import { createDefaultRunner, detectProvider, runPrompt } from './ipc/ai'
 import { buildMenu } from './menu'
 import { WELCOME_NOTE } from './welcome'
@@ -237,7 +240,7 @@ ipcMain.handle('dialog:pick-folder', async (event) => {
 
 ipcMain.handle('dialog:create-default-folder', async () => {
   try {
-    const base = join(app.getPath('documents'), 'Second Brain', 'Inbox')
+    const base = join(app.getPath('documents'), 'Second Brain', 'raw')
     await fsp.mkdir(base, { recursive: true })
     return ok({ path: base })
   } catch (error) {
@@ -301,7 +304,7 @@ ipcMain.handle('filing:preflight', async (_e, plan: FilingPlan) => {
   try {
     return ok({ result: await preflight(diskOps, plan) })
   } catch (error) {
-    return fail(translateFsError(error, 'those folders'))
+    return fail(translateFsError(error, 'that raw folder'))
   }
 })
 
@@ -311,7 +314,7 @@ ipcMain.handle('filing:run', async (event, plan: FilingPlan) => {
     undoByWindow.set(event.sender.id, outcome.undo)
     return { ok: true as const, outcome }
   } catch (error) {
-    return fail(translateFsError(error, 'those folders'))
+    return fail(translateFsError(error, 'that raw folder'))
   }
 })
 
@@ -327,12 +330,33 @@ ipcMain.handle('filing:undo', async (event) => {
   }
 })
 
-ipcMain.handle('siblings:find', async (_e, folders: string[], noteId: string, selfPaths: string[]) => {
+ipcMain.handle('ledger:read', () => ok({ entries: readLedger() }))
+
+ipcMain.handle('ledger:append', (_e, entry: LedgerEntry) => ok({ entries: appendLedger(entry) }))
+
+ipcMain.handle('members:propose-kind', async (_e, path: string) => {
   try {
-    return ok({ paths: await findSiblings(folders, noteId, selfPaths) })
+    return ok({ kind: proposeKind(await fsp.readdir(path)) })
   } catch {
-    return ok({ paths: [] as string[] })
+    return ok({ kind: 'artifact' as const })
   }
+})
+
+/** Which of these folders are not there right now. An empty path counts as missing. */
+ipcMain.handle('members:missing-paths', async (_e, paths: string[]) => {
+  const missing: string[] = []
+  for (const path of paths) {
+    if (path.length === 0) {
+      missing.push(path)
+      continue
+    }
+    try {
+      if (!(await fsp.stat(path)).isDirectory()) missing.push(path)
+    } catch {
+      missing.push(path)
+    }
+  }
+  return ok({ missing })
 })
 
 ipcMain.handle('shell:show-item', (_e, path: string) => {
@@ -399,13 +423,13 @@ ipcMain.handle('diagnostics:copy', async () => {
   } catch {
     aiDetail = 'detection failed'
   }
-  const folders = settings.members.filter((m: { kind: string }) => m.kind === 'folder').length
-  const agents = settings.members.length - folders
+  const agents = settings.members.filter((m) => m.kind === 'agent').length
+  const artifacts = settings.members.filter((m) => m.kind === 'artifact').length
   const report = [
     `MarkiMarkdown ${app.getVersion()}`,
     `Electron ${process.versions.electron}, Node ${process.versions.node}`,
     `${process.platform} ${process.arch}`,
-    `Folders: ${folders}, Agents: ${agents}`,
+    `Agents: ${agents}, Artifacts: ${artifacts}, Bunches: ${settings.bunches.length}`,
     `AI: ${aiDetail}`,
     `Logs: ${log.transports.file.getFile().path}`
   ].join('\n')
