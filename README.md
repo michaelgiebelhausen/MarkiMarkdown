@@ -18,32 +18,43 @@ MarkiMarkdown is free, it is yours, and your notes stay on your own computer as 
 
 ## The Funky Bunch
 
-The Funky Bunch is the strip down the left side of the window. It holds two things:
+The Funky Bunch is the strip down the left side of the window. It is built on one idea: the folders in your
+coworking space come in two kinds.
 
-- **Your agents**, at the top. These are the AI helpers you work with, for example a study coach or a research
-  assistant.
-- **Your folders**, at the bottom. These are the real folders on your computer where notes live.
+- **Agents** are folders that do work. They hold skills, a `CLAUDE.md`, instructions.
+- **Artifacts** are folders that hold what the work produces: a thesis chapter, a startup plan, a band site.
+
+A **bunch** is a group of agents and artifacts, like a group chat on your phone. Each bunch has a **raw**
+folder, the inbox of your second brain.
 
 Here is how you use it:
 
-1. Open or write a note.
-2. Click the agents who should know about this note.
-3. Click any extra folders it should live in.
-4. Click **File**.
+1. Open the team board (the grid button on the strip) and add an agent and an artifact.
+2. Make a bunch: give it a name, a raw folder, and tick the agents and artifacts in it.
+3. Open or write a note, click the bunch it is for, and press **File**.
 
-Picking an agent picks its folders for you. Each agent knows which folders it reads, so selecting the agent
-automatically selects those folders. You can still add or remove folders by hand afterwards.
+When you click File, MarkiMarkdown writes the note **once**, into that bunch's raw folder, and stamps its
+front matter with who it is for:
 
-When you click File, three things happen:
+```yaml
+bunch: thesis
+agents:
+  - study-coach
+agent_paths:
+  - C:/Users/me/agents/study-coach
+artifacts:
+  - thesis-chapter-3
+artifact_paths:
+  - C:/Users/me/artifacts/thesis-chapter-3
+```
 
-- A copy of the note is placed in **every** selected folder.
-- The agents you chose are written into the note's front matter (the small block of details at the top), so an
-  agent reading the folder can see who the note is for.
-- Each folder's `log.md` gets a line recording that the note was filed there, with the date.
+Names and paths line up index for index, so a second-brain script can grep them. The agents and artifacts
+are also mirrored as tags (`agent/study-coach`, `artifact/thesis-chapter-3`) for Obsidian users. Your
+second brain reads the raw folder and does the routing. MarkiMarkdown never writes into agent or artifact
+folders itself.
 
-One thing worth knowing: **each copy is its own separate file.** If you file a note into three folders you now
-have three files. Editing one of them does not change the other two. That is deliberate, because it is what an
-agent reading a single folder expects to find.
+The team board shows agents across the top and artifacts down the side, with a count in each square of how
+many notes have gone to that pair. Click a square to make or open the bunch that pairs them.
 
 ## What it does
 

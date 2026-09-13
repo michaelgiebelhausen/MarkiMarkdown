@@ -57,15 +57,18 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
 
       <h3 className="section-head">The Funky Bunch</h3>
       <p>
-        Down the left edge are your <strong>agents</strong> on top and your <strong>folders</strong>{' '}
-        underneath. Click the ones this note is relevant to, then press the File button. Picking an agent
-        also picks the folders that agent reads.
+        Down the left edge are your <strong>bunches</strong>. A bunch is a group of{' '}
+        <strong>agents</strong> (folders that do work) and <strong>artifacts</strong> (folders that hold what
+        the work produces), like a group chat. Click the bunch this note is for, then press File.
       </p>
       <p>
-        Filing puts a copy of the note in every folder you chose, writes the agent names into the note
-        itself, and adds a line to that folder&apos;s <code>log.md</code> so an agent can see what arrived.
+        Filing writes the note once, into that bunch&apos;s <strong>raw</strong> folder, with the agents and
+        artifacts written into the note&apos;s properties so your second brain knows who it is for.
       </p>
-      <p className="muted">Each copy is its own file. Editing one later does not change the others.</p>
+      <p className="muted">
+        The team board (the grid button on the strip) shows your agents across the top and your artifacts down the
+        side, with how many notes have gone to each pair.
+      </p>
 
       <h3 className="section-head">Handy keys</h3>
       <table className="cheatsheet">

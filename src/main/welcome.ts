@@ -18,12 +18,12 @@ export const WELCOME_NOTE = [
   '',
   'Your turn:',
   '',
-  '- [ ] Add your first folder to the Funky Bunch, on the left edge',
-  '- [ ] Pick a folder, then press File',
+  '- [ ] Open the team board on the left edge and add an agent and an artifact',
+  '- [ ] Make a bunch, pick it, then press File',
   '',
   '---',
   '',
-  'Filing puts a copy in every folder you choose. Each copy is its own file,',
-  'so editing one later does not change the others.',
+  'Filing writes one copy into the raw folder of the bunch you chose, stamped with',
+  'the agents and artifacts in that bunch. Your second brain takes it from there.',
   ''
 ].join('\n')
