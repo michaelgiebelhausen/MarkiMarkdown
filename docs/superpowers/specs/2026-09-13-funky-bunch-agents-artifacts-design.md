@@ -120,7 +120,10 @@ artifact_paths:
 
 Rules:
 
-- Refiling into another bunch replaces all six keys wholesale.
+- Refiling into another bunch replaces all five keys wholesale. A list that would be empty is
+  omitted rather than written as `[]`.
+- Tags in the reserved `agent/` and `artifact/` namespaces are treated as mirrored entries and are
+  replaced on every filing, whether or not the app wrote them.
 - Names are plain strings, never wikilinks. A later `related:` key may carry `[[links]]` without
   disturbing these.
 - An agent with an empty path still appears in `agents` with an empty string in `agent_paths` at the
