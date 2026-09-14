@@ -13,7 +13,8 @@ Go to the project's **Releases** page and look at the list of files at the botto
 | --- | --- | --- |
 | Windows | `MarkiMarkdown-1.1.0-Windows-Setup.exe` | The normal installer. Pick this one. |
 | Windows, no permission to install | `MarkiMarkdown-1.1.0-Windows-Portable.exe` | Runs straight from the file. No install. |
-| Mac | `MarkiMarkdown-1.1.0-Mac.dmg` | The normal Mac download. |
+
+A Mac download is not available yet. It will appear in this table when it is.
 
 The numbers in those names are the version, so they go up over time. Take the newest.
 
@@ -83,7 +84,9 @@ not spend an evening fighting with it.
 
 ## Mac
 
-1. Download **`MarkiMarkdown-1.1.0-Mac.dmg`**.
+There is no Mac build yet. When one is released, these will be the steps.
+
+1. Download the **`.dmg`** file from the release.
 2. Double-click the downloaded file. A small window opens showing the MarkiMarkdown icon and an
    **Applications** folder.
 3. Drag the MarkiMarkdown icon onto the **Applications** folder. Wait for the copying to finish.
