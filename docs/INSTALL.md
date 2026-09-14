@@ -25,6 +25,8 @@ You will also see files ending in `.blockmap`, a file called `latest.yml`, and t
 1. Download **`MarkiMarkdown-1.1.0-Windows-Setup.exe`**.
 2. Open your **Downloads** folder and double-click the file.
 3. Windows will probably show a blue box saying **"Windows protected your PC"**. This is expected. Keep reading.
+   If instead you see a plain message saying **"An Application Control policy has blocked this file"**, with no
+   blue box and no button to run it anyway, skip to [Smart App Control](#if-windows-says-an-application-control-policy-has-blocked-this-file) below.
 4. Click the small **More info** link in that blue box.
 5. Click **Run anyway**.
 6. Follow the installer. It takes a few seconds. MarkiMarkdown then opens by itself.
@@ -102,17 +104,22 @@ The first time MarkiMarkdown opens you will see a **Welcome** note already loade
 left and the tidy version on the right. Type in either side and watch the other one change. Nothing you do to
 this note can hurt anything.
 
-Down the left is the **Funky Bunch**: your agents on top, your folders underneath. It starts empty, so let's
-add a folder.
+Down the left is the **Funky Bunch**. It starts empty, so let's set it up. The idea is that the folders you
+work with come in two kinds: **agents** are folders that do work (they hold skills and instructions for an AI),
+and **artifacts** are folders that hold what the work produces. A **bunch** is a group of agents and artifacts,
+like a group chat, with a **raw** folder where filed notes land.
 
-1. Click the **+** button at the bottom of the Funky Bunch strip and choose **Add folder**.
+1. Click the grid button on the strip to open the **team board**, then click **Add an artifact**.
 2. Pick a folder on your computer. If you already keep notes somewhere, pick that. If not, make a new folder
    called `Notes` first, in Documents.
-3. Give it a short name and pick an emoji for it. The emoji is just so you can spot it quickly.
-4. Click **Save**.
+3. Give it a short name and pick an emoji for it. The emoji is just so you can spot it quickly. Click **Save**.
+4. If you have a folder that an AI agent works from, click **Add an agent** and pick that too. You can skip this
+   for now.
+5. Close the board, click the **+** on the strip to **make a bunch**, give it a name, choose a raw folder (the
+   **Create Documents / Second Brain / raw for me** button makes one), tick your artifact, and click **Save**.
 
-That folder now appears in the strip. To try filing, click the folder so it lights up, then click **File**. Your
-Welcome note is copied into that folder, and the folder's `log.md` gets a line saying so.
+That bunch now appears in the strip. To try filing, click the bunch so it lights up, then click **File**. Your
+Welcome note is moved into the bunch's raw folder, with the agents and artifacts written into its properties.
 
 ## If something goes wrong
 
@@ -137,11 +144,12 @@ If you would rather look at the full log file yourself, or send it on:
 
 ### Where did my file go after I clicked File?
 
-It went into the folders you chose. That is what the File button does: it puts a copy of the note into every
-folder that was lit up in the Funky Bunch, and it tidies the original away from wherever it was sitting, usually
-Downloads.
+It went into the raw folder of the bunch you chose. That is what the File button does: it writes the note once
+into that folder, stamps it with the agents and artifacts in the bunch, and tidies the original away from
+wherever it was sitting, usually Downloads.
 
-To find it, open one of those folders. The note is a normal file, sitting right there.
+To find it, open that raw folder. The note is a normal file, sitting right there. The strip also shows a dot on
+the bunch a note was last filed to.
 
 If that is not what you wanted, click **Undo** in the little message that pops up at the bottom of the window
 straight after filing. That puts everything back the way it was.
@@ -164,12 +172,12 @@ Two things worth saying plainly:
 
 Yes, and it works nicely.
 
-Point your Funky Bunch folders at folders inside your Obsidian vault. Every note MarkiMarkdown files is an
+Point a bunch's raw folder at a folder inside your Obsidian vault. Every note MarkiMarkdown files is an
 ordinary Markdown file with ordinary front matter, so Obsidian picks it up as soon as it appears. Nothing is in
 a special format and nothing is locked away.
 
-If you would like the agents to show up as Obsidian tags too, turn on **Also write agents as tags** in
-Settings. Each agent then appears in the note's tags as `agent/name`, which Obsidian can search and filter on.
+The agents and artifacts also show up as Obsidian tags, as `agent/name` and `artifact/name`, which Obsidian can
+search and filter on. That is on by default; you can turn it off in Settings.
 
 The same is true for any other tool that reads Markdown files, including your own AI agents. They are just
 files in folders.
