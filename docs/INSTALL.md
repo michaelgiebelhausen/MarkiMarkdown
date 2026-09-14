@@ -11,9 +11,9 @@ Go to the project's **Releases** page and look at the list of files at the botto
 
 | You are on | Download this | What it is |
 | --- | --- | --- |
-| Windows | `MarkiMarkdown-1.0.0-Windows-Setup.exe` | The normal installer. Pick this one. |
-| Windows, no permission to install | `MarkiMarkdown-1.0.0-Windows-Portable.exe` | Runs straight from the file. No install. |
-| Mac | `MarkiMarkdown-1.0.0-Mac.dmg` | The normal Mac download. |
+| Windows | `MarkiMarkdown-1.1.0-Windows-Setup.exe` | The normal installer. Pick this one. |
+| Windows, no permission to install | `MarkiMarkdown-1.1.0-Windows-Portable.exe` | Runs straight from the file. No install. |
+| Mac | `MarkiMarkdown-1.1.0-Mac.dmg` | The normal Mac download. |
 
 The numbers in those names are the version, so they go up over time. Take the newest.
 
@@ -22,7 +22,7 @@ You will also see files ending in `.blockmap`, a file called `latest.yml`, and t
 
 ## Windows
 
-1. Download **`MarkiMarkdown-1.0.0-Windows-Setup.exe`**.
+1. Download **`MarkiMarkdown-1.1.0-Windows-Setup.exe`**.
 2. Open your **Downloads** folder and double-click the file.
 3. Windows will probably show a blue box saying **"Windows protected your PC"**. This is expected. Keep reading.
 4. Click the small **More info** link in that blue box.
@@ -62,7 +62,7 @@ whole problem does not apply to you.
 
 ### The Portable version
 
-`MarkiMarkdown-1.0.0-Windows-Portable.exe` is the whole app in a single file. Double-click it and it just runs. There is no
+`MarkiMarkdown-1.1.0-Windows-Portable.exe` is the whole app in a single file. Double-click it and it just runs. There is no
 installer and nothing is added to your Start menu. It is a good choice if you are not allowed to install
 software, or if you want to keep the app on a USB stick.
 
@@ -81,7 +81,7 @@ not spend an evening fighting with it.
 
 ## Mac
 
-1. Download **`MarkiMarkdown-1.0.0-Mac.dmg`**.
+1. Download **`MarkiMarkdown-1.1.0-Mac.dmg`**.
 2. Double-click the downloaded file. A small window opens showing the MarkiMarkdown icon and an
    **Applications** folder.
 3. Drag the MarkiMarkdown icon onto the **Applications** folder. Wait for the copying to finish.

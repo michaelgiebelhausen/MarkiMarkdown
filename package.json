@@ -1,6 +1,6 @@
 {
   "name": "markimarkdown",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A simple Markdown editor that shows the code and the clean text side by side, and files notes into your second brain.",
   "main": "./out/main/index.js",
   "author": "MarkiMarkdown",
