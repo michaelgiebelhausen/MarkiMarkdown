@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach } from 'vitest'
 import {
-  sanitizeFileName,
   preflight,
   runFiling,
   undoFiling,
@@ -75,33 +74,6 @@ const plan = (over: Partial<FilingPlan> = {}): FilingPlan => ({
   currentPath: '/downloads/lecture-notes.md',
   raw: { name: 'study', path: '/sb/raw' },
   ...over
-})
-
-describe('sanitizeFileName', () => {
-  test('always ends in .md and drops other note extensions', () => {
-    expect(sanitizeFileName('notes.txt')).toBe('notes.md')
-    expect(sanitizeFileName('notes.markdown')).toBe('notes.md')
-    expect(sanitizeFileName('notes')).toBe('notes.md')
-  })
-
-  test('strips characters Windows refuses and path separators', () => {
-    expect(sanitizeFileName('a<b>c:d"e|f?g*h')).toBe('abcdefgh.md')
-    expect(sanitizeFileName('a/b' + String.fromCharCode(92) + 'c')).toBe('abc.md')
-  })
-
-  test('renames reserved device names and empties', () => {
-    expect(sanitizeFileName('con')).toBe('con-note.md')
-    expect(sanitizeFileName('')).toBe('note.md')
-    expect(sanitizeFileName('...')).toBe('note.md')
-  })
-
-  test('a note called log keeps its name now that there is no folder log', () => {
-    expect(sanitizeFileName('log')).toBe('log.md')
-  })
-
-  test('caps very long names', () => {
-    expect(sanitizeFileName('x'.repeat(200)).length).toBe(123)
-  })
 })
 
 describe('preflight', () => {

@@ -10,6 +10,9 @@
  * ugly failure paths - can be exercised in tests without touching a real disk.
  */
 import { samePath, dirName } from '../../shared/paths'
+import { sanitizeFileName } from './archive'
+
+export { sanitizeFileName }
 
 export interface FileOps {
   dirExists(path: string): Promise<boolean>
@@ -64,20 +67,6 @@ export interface FilingOutcome {
   originalKept: boolean
   notice: string
   undo: UndoRecord
-}
-
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
-
-export function sanitizeFileName(input: string): string {
-  const withoutExt = input.replace(/\.(md|markdown|txt|text)$/i, '')
-  let name = withoutExt.normalize('NFC')
-  name = name.replace(/[<>:"|?*\u0000-\u001f]/g, '')
-  name = name.split('/').join('').split(String.fromCharCode(92)).join('')
-  name = name.replace(/[. ]+$/, '').replace(/^[. ]+/, '')
-  if (WINDOWS_RESERVED.test(name)) name = `${name}-note`
-  if (name.length === 0) name = 'note'
-  if (name.length > 120) name = name.slice(0, 120).replace(/[. ]+$/, '')
-  return `${name}.md`
 }
 
 /** A cheap content fingerprint - enough to notice that something else rewrote a copy. */

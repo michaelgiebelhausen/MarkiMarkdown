@@ -3,8 +3,9 @@ import { join } from 'node:path'
 import { promises as fsp } from 'node:fs'
 import log from 'electron-log/main'
 import { readSettings, writeSettings, saveApiKey, loadApiKey } from './ipc/settings'
-import { diskOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
+import { diskOps, diskArchiveOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
 import { preflight, runFiling, undoFiling, type FilingPlan, type UndoRecord } from './ipc/filing'
+import { writeArchiveCopy, writeNewNote, moveWorkingFile } from './ipc/archive'
 import { readLedger, appendLedger } from './ipc/ledger'
 import { proposeKind } from '../shared/memberKind'
 import type { LedgerEntry } from '../shared/types'
@@ -330,6 +331,30 @@ ipcMain.handle('filing:undo', async (event) => {
     return { ok: true as const, result }
   } catch (error) {
     return fail(translateFsError(error, 'those files'))
+  }
+})
+
+ipcMain.handle('archive:write', async (_e, rawDir: string, fileName: string, date: string, text: string) => {
+  try {
+    return await writeArchiveCopy(diskArchiveOps, rawDir, fileName, date, text)
+  } catch (error) {
+    return fail(translateFsError(error, 'the raw folder'))
+  }
+})
+
+ipcMain.handle('file:write-new', async (_e, dir: string, fileName: string, text: string) => {
+  try {
+    return await writeNewNote(diskArchiveOps, dir, fileName, text)
+  } catch (error) {
+    return fail(translateFsError(error, dir))
+  }
+})
+
+ipcMain.handle('file:move', async (_e, from: string, toDir: string) => {
+  try {
+    return await moveWorkingFile(diskArchiveOps, from, toDir)
+  } catch (error) {
+    return fail(translateFsError(error, from))
   }
 })
 

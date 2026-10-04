@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { shell } from 'electron'
 import log from 'electron-log/main'
 import type { FileOps } from './filing'
+import type { ArchiveOps } from './archive'
 import type { LoadedFile } from '../../shared/types'
 
 /** Decodes a file the way a student's tools actually wrote it. */
@@ -128,4 +129,54 @@ export const diskOps: FileOps = {
       return null
     }
   }
+}
+
+function code(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException)?.code
+}
+
+/** The real disk behind the save flow's ArchiveOps. */
+export const diskArchiveOps: ArchiveOps = {
+  async dirExists(path) {
+    try {
+      return (await fsp.stat(path)).isDirectory()
+    } catch {
+      return false
+    }
+  },
+  listNames: (dir) => fsp.readdir(dir),
+  async createExclusive(path, text) {
+    try {
+      const handle = await fsp.open(path, 'wx')
+      try {
+        await handle.writeFile(text, 'utf8')
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      return true
+    } catch (error) {
+      if (code(error) === 'EEXIST') return false
+      throw error
+    }
+  },
+  async copyExclusive(from, to) {
+    try {
+      await fsp.copyFile(from, to, constants.COPYFILE_EXCL)
+      return true
+    } catch (error) {
+      if (code(error) === 'EEXIST') return false
+      throw error
+    }
+  },
+  async exists(path) {
+    try {
+      await fsp.access(path)
+      return true
+    } catch {
+      return false
+    }
+  },
+  rename: (from, to) => fsp.rename(from, to),
+  trash: (path) => shell.trashItem(path)
 }

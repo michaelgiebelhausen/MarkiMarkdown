@@ -24,6 +24,10 @@ const api = {
       ipcRenderer.invoke('file:save-all', paths, content),
     saveAs: (name: string, content: string): Promise<Result<{ path: string }>> =>
       ipcRenderer.invoke('file:save-as', name, content),
+    writeNew: (dir: string, fileName: string, content: string): Promise<Result<{ path: string }>> =>
+      ipcRenderer.invoke('file:write-new', dir, fileName, content),
+    move: (from: string, toDir: string): Promise<Result<{ path: string; notice?: string }>> =>
+      ipcRenderer.invoke('file:move', from, toDir),
     pathFor: (file: File): string => {
       try {
         return webUtils.getPathForFile(file)
@@ -43,6 +47,10 @@ const api = {
     read: (): Promise<Result<{ entries: LedgerEntry[] }>> => ipcRenderer.invoke('ledger:read'),
     append: (entry: LedgerEntry): Promise<Result<{ entries: LedgerEntry[]; saved: boolean }>> =>
       ipcRenderer.invoke('ledger:append', entry)
+  },
+  archive: {
+    write: (rawDir: string, fileName: string, date: string, content: string): Promise<Result<{ path: string }>> =>
+      ipcRenderer.invoke('archive:write', rawDir, fileName, date, content)
   },
   members: {
     proposeKind: (path: string): Promise<Result<{ kind: MemberKind }>> =>
