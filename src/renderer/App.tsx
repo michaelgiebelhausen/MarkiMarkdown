@@ -98,28 +98,34 @@ export default function App() {
     })
   }, [warnNotSaving])
 
-  /** Applies a settings write's reply, and says so once when it only lives in memory. */
-  const applySettingsReply = useCallback(
-    (result: Awaited<ReturnType<typeof window.marki.settings.write>>) => {
-      if (!result.ok) return
-      setSettings(result.settings)
-      if (!result.persisted) warnNotSaving('settings')
-    },
-    [warnNotSaving]
-  )
-
-  const saveSettings = useCallback(
-    async (patch: Partial<Settings>) => {
-      const result = await window.marki.settings.write(patch)
-      applySettingsReply(result)
-      return result
-    },
-    [applySettingsReply]
-  )
-
   /** The newest settings, even before React re-renders, so quick toggles build on each other. */
   const settingsRef = useRef<Settings | null>(null)
   settingsRef.current = settings
+
+  /** Numbers every settings write, so only the reply to the newest one is applied. */
+  const settingsWrites = useRef(0)
+
+  /**
+   * Sends one settings write and applies its reply. Every reply carries the whole merged
+   * settings, so an older reply landing after a newer write was sent is safely skipped:
+   * applying it would briefly undo that newer change (an optimistic pane toggle, say).
+   * Each reply is still checked for "not saved to disk".
+   */
+  const saveSettings = useCallback(
+    async (patch: Partial<Settings>) => {
+      const ticket = ++settingsWrites.current
+      const result = await window.marki.settings.write(patch)
+      if (result.ok) {
+        if (!result.persisted) warnNotSaving('settings')
+        if (ticket === settingsWrites.current) {
+          settingsRef.current = result.settings
+          setSettings(result.settings)
+        }
+      }
+      return result
+    },
+    [warnNotSaving]
+  )
 
   // Optimistic, so the checkbox flips in the same frame as the click.
   const togglePaneKey = useCallback(
@@ -131,10 +137,10 @@ export default function App() {
       const next = { ...current, panes }
       settingsRef.current = next
       setSettings(next)
-      // The reply carries every write so far, so the last one to land is always complete.
-      void window.marki.settings.write({ panes }).then(applySettingsReply)
+      // The reply carries every write so far, so the newest one is always complete.
+      void saveSettings({ panes })
     },
-    [applySettingsReply]
+    [saveSettings]
   )
 
   const members = settings?.members ?? []
@@ -518,12 +524,10 @@ export default function App() {
       archivedAt: nowLocalIso()
     }
     const appended = await window.marki.ledger.append(entry)
-    if (appended.ok) {
-      setLedger(appended.entries)
-      if (!appended.saved) warnNotSaving('ledger')
-    } else {
-      warnNotSaving('ledger')
-    }
+    // An append that was not saved may hand back an empty or stale list (the file could
+    // not be read): keep the counts already on screen rather than wiping them.
+    if (appended.ok && appended.saved) setLedger(appended.entries)
+    else warnNotSaving('ledger')
 
     pushToast({
       text: outcome.notice || `Filed to ${bunch.name}.`,

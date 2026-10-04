@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { PaneSet } from '@shared/types'
-import { dragDivider, layoutPanes, PANE_ORDER, type PaneKey } from './paneMath'
+import { DIVIDER_WIDTH, dragDivider, fitPanes, type PaneKey } from './paneMath'
 
 interface Props {
   panes: PaneSet
@@ -14,14 +14,6 @@ interface Props {
 
 /** Before the first measurement there is no width yet; assume a typical window so nothing hides. */
 const FALLBACK_WIDTH = 1200
-
-/** Matches the 6px divider columns in the grid template below. */
-const DIVIDER_WIDTH = 6
-
-/** The width left for panes once the dividers between `count` panes are taken out. */
-function paneRoom(width: number, count: number): number {
-  return Math.max(0, width - DIVIDER_WIDTH * Math.max(0, count - 1))
-}
 
 export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: Props) {
   const host = useRef<HTMLDivElement>(null)
@@ -41,13 +33,7 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
   }, [])
 
   const width = total || FALLBACK_WIDTH
-  const ticked = PANE_ORDER.filter((k) => panes[k]).length
-  let room = paneRoom(width, ticked)
-  let layout = layoutPanes(panes, draft ?? widths, room)
-  if (layout.shown.length < ticked) {
-    room = paneRoom(width, layout.shown.length)
-    layout = layoutPanes(panes, draft ?? widths, room)
-  }
+  const { layout, room } = fitPanes(panes, draft ?? widths, width)
 
   /** The live pane room, so a window resize during a drag is measured against the new width. */
   const roomRef = useRef(room)
@@ -71,6 +57,7 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
     event.preventDefault()
     dragCleanup.current?.()
     const startX = event.clientX
+    const pointer = event.pointerId
     const startLayout = layout
     const base = draft ?? widths
     let latest = base
@@ -82,7 +69,10 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
       // The pointer may already be gone; the window listeners still end the drag.
     }
     // Listen on the window: the divider itself can unmount mid-drag when a pane is toggled.
+    // Only the pointer that grabbed the divider moves it or lets it go: a second finger or
+    // pen lifting elsewhere must not end this drag.
     const move = (e: PointerEvent) => {
+      if (e.pointerId !== pointer) return
       latest = dragDivider(base, startLayout, index, e.clientX - startX, roomRef.current)
       setDraft(latest)
     }
@@ -90,15 +80,18 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
       if (done) return
       done = true
       window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', end)
-      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('pointerup', release)
+      window.removeEventListener('pointercancel', release)
       if (dragCleanup.current === end) dragCleanup.current = null
       setDraft(null)
       if (latest !== base) onWidths(latest)
     }
+    const release = (e: PointerEvent) => {
+      if (e.pointerId === pointer) end()
+    }
     window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', end)
-    window.addEventListener('pointercancel', end)
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', release)
     dragCleanup.current = end
   }
 

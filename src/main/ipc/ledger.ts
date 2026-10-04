@@ -1,11 +1,12 @@
 import { app } from 'electron'
-import { writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs'
+import { mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import log from 'electron-log/main'
 import type { LedgerEntry } from '../../shared/types'
 import { isLegacyLedger, normaliseLedgerEntry } from '../../shared/ledger'
 import { backupOnce, backupUnique } from './backup'
 import { judgeRead, readOutcome, type Guarded } from './readGuard'
+import { replaceFileSync } from './writeGuard'
 
 /**
  * Set once the ledger on disk could not be backed up before a rewrite. Appends then report
@@ -97,9 +98,7 @@ export function appendLedger(entry: LedgerEntry): { entries: LedgerEntry[]; save
   try {
     const target = ledgerPath()
     mkdirSync(dirname(target), { recursive: true })
-    const temp = `${target}.tmp`
-    writeFileSync(temp, JSON.stringify(next, null, 2), 'utf8')
-    renameSync(temp, target)
+    replaceFileSync(target, JSON.stringify(next, null, 2))
     return { entries: next, saved: true }
   } catch (error) {
     log.error('Could not write the ledger', error)

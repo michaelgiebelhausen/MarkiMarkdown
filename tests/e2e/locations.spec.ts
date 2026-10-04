@@ -102,6 +102,15 @@ test('broken YAML greys out the grid and the chips', async () => {
   expect(h.errors).toEqual([])
 })
 
+test('the blocked grid says what is wrong with the YAML', async () => {
+  await openNote('---\nskills: [librarian]\nbunch: study\nbunch: other\n---\n# Note\n')
+  await expect(pane().locator('.grid-blocked')).toHaveText(
+    'Fix the YAML to tick skills and domains. The key bunch appears twice at the top of this note.'
+  )
+  await expect(pane().getByRole('button', { name: 'librarian and thesis: 0 notes' })).toBeDisabled()
+  expect(h.errors).toEqual([])
+})
+
 test('right-clicking a name opens it for editing', async () => {
   await openNote('# Note\n')
   await pane().getByRole('button', { name: 'librarian skill', exact: true }).click({ button: 'right' })

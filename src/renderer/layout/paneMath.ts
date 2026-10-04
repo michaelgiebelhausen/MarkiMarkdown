@@ -55,6 +55,35 @@ export function layoutPanes(panes: PaneSet, widths: [number, number, number], to
   return { shown, hidden, fractions: clampToMinimums(shown, fractions, room) }
 }
 
+/** Matches the divider columns PaneLayout puts between panes. */
+export const DIVIDER_WIDTH = 6
+
+/** The width left for panes once the dividers between `count` panes are taken out. */
+export function paneRoom(width: number, count: number): number {
+  return Math.max(0, width - DIVIDER_WIDTH * Math.max(0, count - 1))
+}
+
+/**
+ * Lays out the ticked panes in a window `width` pixels wide, dividers included. The first
+ * pass assumes every ticked pane shows; when some drop, the dividers they no longer need
+ * are given back and the panes laid out again. That extra room can make a dropped pane
+ * fit again, which would need its divider back, so the second pass may never show more
+ * panes than the first: the first pass's panes are kept, with the room they really have.
+ */
+export function fitPanes(
+  panes: PaneSet,
+  widths: [number, number, number],
+  width: number
+): { layout: PaneLayout; room: number } {
+  const ticked = PANE_ORDER.filter((k) => panes[k]).length
+  const first = layoutPanes(panes, widths, paneRoom(width, ticked))
+  if (first.shown.length >= ticked) return { layout: first, room: paneRoom(width, ticked) }
+  const room = paneRoom(width, first.shown.length)
+  const second = layoutPanes(panes, widths, room)
+  if (second.shown.length > first.shown.length) return { layout: first, room }
+  return { layout: second, room }
+}
+
 /**
  * Moves the divider between shown pane `index` and the next one by `dx` pixels, never
  * squeezing either below its minimum. Returns widths for all three panes: shown panes

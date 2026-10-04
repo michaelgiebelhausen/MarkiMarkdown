@@ -10,6 +10,8 @@ interface Props {
   missingMemberIds: string[]
   /** The YAML cannot be read, so nothing can be ticked. */
   disabled: boolean
+  /** What is wrong with the YAML, in plain words, shown while disabled. */
+  blockedReason?: string
   onToggleSkill: (id: string) => void
   onToggleDomain: (id: string) => void
   onToggleCell: (skillId: string, domainId: string) => void
@@ -76,7 +78,12 @@ export function SkillDomainGrid(props: Props) {
 
   return (
     <div className={props.disabled ? 'grid-wrap grid-disabled' : 'grid-wrap'}>
-      {props.disabled && <p className="grid-blocked">Fix the YAML to tick skills and domains.</p>}
+      {props.disabled && (
+        <p className="grid-blocked" role="status">
+          Fix the YAML to tick skills and domains.
+          {props.blockedReason ? ` ${props.blockedReason}` : ''}
+        </p>
+      )}
       <div className="board-scroll">
         <table className="board" aria-label="Skills and domains">
           <thead>

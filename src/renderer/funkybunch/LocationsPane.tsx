@@ -70,6 +70,7 @@ export function LocationsPane(props: Props) {
         domainIds={props.ticks.domainIds}
         missingMemberIds={props.missingMemberIds}
         disabled={broken}
+        blockedReason={props.ticks.reason}
         onToggleSkill={props.onToggleSkill}
         onToggleDomain={props.onToggleDomain}
         onToggleCell={props.onToggleCell}

@@ -22,12 +22,14 @@ export interface UnknownName {
 
 export interface TickReading extends Ticks {
   /**
-   * False when the front matter cannot be parsed, when skills, domains, agents,
-   * artifacts or tags holds a mapping or is written twice, or when a skills, domains,
-   * agents or artifacts list holds something other than plain values. Nothing else is
-   * meaningful then.
+   * False when the front matter cannot be parsed, when a key the ticks write (the lists,
+   * bunch, or a *_paths key) is written twice, when skills, domains, agents, artifacts or
+   * tags holds a mapping, or when a skills, domains, agents or artifacts list holds
+   * something other than plain values. Nothing else is meaningful then.
    */
   ok: boolean
+  /** Why ok is false, in plain words a student can act on. Empty when ok. */
+  reason: string
   /** Every name listed under skills and then 1.1 agents, known or not, as written. */
   skillNames: string[]
   domainNames: string[]
@@ -39,9 +41,10 @@ export interface TickReading extends Ticks {
   tagCount: number
 }
 
-function empty(ok: boolean): TickReading {
+function empty(ok: boolean, reason = ''): TickReading {
   return {
     ok,
+    reason: ok ? '' : reason,
     skillIds: [],
     domainIds: [],
     skillNames: [],
@@ -93,6 +96,19 @@ const LIST_KEYS = ['skills', 'domains', 'agents', 'artifacts', 'tags']
 /** Keys applyTicks rewrites wholesale from names, so every item must be a plain name. */
 const NAME_KEYS = ['skills', 'domains', 'agents', 'artifacts']
 
+/**
+ * Keys applyTicks writes or removes. Written twice, the parsed data keeps only one, so
+ * rewriting would silently drop the other, or leave a stale copy beside the new one.
+ */
+const OWNED_KEYS = [...LIST_KEYS, 'bunch', 'skill_paths', 'domain_paths', 'agent_paths', 'artifact_paths']
+
+/** The parser's message on one line, with where it happened. */
+function parseReason(line: number, message: string): string {
+  const first = (message.split('\n')[0] ?? '').trim().replace(/:$/, '')
+  const where = /\bline \d+/.test(first) ? first : `${first} at line ${line}`
+  return `The YAML at the top of this note can't be read: ${where}.`
+}
+
 function isMapping(value: unknown): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -117,11 +133,14 @@ function findMember(members: Member[], kind: MemberKind, name: string): Member |
 export function readTicks(raw: string | null, members: Member[]): TickReading {
   if (raw === null) return empty(true)
   const parsed = parseFrontMatter(raw)
-  if (!parsed.ok) return empty(false)
+  if (!parsed.ok) return empty(false, parseReason(parsed.line, parsed.message))
   const data = parsed.data
-  if (LIST_KEYS.some((key) => isMapping(data[key]))) return empty(false)
-  if (NAME_KEYS.some((key) => hasNonScalarItem(data[key]))) return empty(false)
-  if (duplicateTopLevelKeys(raw).some((key) => LIST_KEYS.includes(key))) return empty(false)
+  const twice = duplicateTopLevelKeys(raw).find((key) => OWNED_KEYS.includes(key))
+  if (twice !== undefined) return empty(false, `The key ${twice} appears twice at the top of this note.`)
+  const mapping = LIST_KEYS.find((key) => isMapping(data[key]))
+  if (mapping !== undefined) return empty(false, `${mapping} holds a group of settings instead of a list.`)
+  const nested = NAME_KEYS.find((key) => hasNonScalarItem(data[key]))
+  if (nested !== undefined) return empty(false, `An item under ${nested} is not a plain name.`)
 
   const both = (key: string, alias: string) => {
     const out = names(data[key])

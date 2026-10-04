@@ -24,15 +24,22 @@ export type Guarded<T> =
 
 /** Errors a virus scanner, backup tool or sync client causes for a moment while it holds the file. */
 const TRANSIENT = new Set(['EBUSY', 'EPERM', 'EACCES'])
-const RETRIES = 3
-const RETRY_MS = 50
+/** How many times a transient failure is tried again, and how long to wait between tries. */
+export const RETRIES = 3
+export const RETRY_MS = 50
+
+/** True for an error that a moment's wait may clear. */
+export function isTransient(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code !== undefined && TRANSIENT.has(code)
+}
 
 function readText(path: string): string {
   return readFileSync(path, 'utf8')
 }
 
-/** Blocks the thread briefly; only used at startup-sized reads, where a few ms is fine. */
-function pauseSync(ms: number): void {
+/** Blocks the thread briefly; only used for small settings-sized files, where a few ms is fine. */
+export function pauseSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 

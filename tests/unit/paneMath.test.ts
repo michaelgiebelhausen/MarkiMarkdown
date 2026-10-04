@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { MIN_WIDTH, dragDivider, layoutPanes, togglePane } from '@renderer/layout/paneMath'
+import { DIVIDER_WIDTH, MIN_WIDTH, dragDivider, fitPanes, layoutPanes, togglePane } from '@renderer/layout/paneMath'
 
 const all = { bunch: true, raw: true, rendered: true }
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -105,6 +105,32 @@ describe('dragDivider', () => {
       const w = dragDivider([1, 1, 2], l, index, dx, total)
       w.forEach((v, i) => expect(v).toBeCloseTo(normalised[i]))
     }
+  })
+})
+
+describe('fitPanes', () => {
+  const all = { bunch: true, raw: true, rendered: true }
+
+  test('takes the dividers between the shown panes out of the width', () => {
+    const fit = fitPanes(all, [1, 1, 1], 1200)
+    expect(fit.layout.shown).toEqual(['bunch', 'raw', 'rendered'])
+    expect(fit.room).toBe(1200 - 2 * DIVIDER_WIDTH)
+  })
+
+  test('with a pane dropped, gives back the width of the divider it no longer needs', () => {
+    const fit = fitPanes(all, [1, 1, 1], 600)
+    expect(fit.layout.shown).toEqual(['bunch', 'raw'])
+    expect(fit.room).toBe(600 - DIVIDER_WIDTH)
+  })
+
+  test('never shows more panes on the second pass than the first', () => {
+    // 768 - 12 is too narrow for all three minimums (760), 768 - 6 is not: without the
+    // guard the second pass would show three panes with room measured for two.
+    const fit = fitPanes(all, [1, 1, 1], 768)
+    expect(fit.layout.shown).toEqual(['bunch', 'raw'])
+    expect(fit.layout.hidden).toEqual(['rendered'])
+    expect(fit.layout.fractions).toHaveLength(2)
+    expect(fit.room).toBe(768 - DIVIDER_WIDTH)
   })
 })
 

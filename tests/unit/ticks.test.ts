@@ -15,9 +15,37 @@ describe('readTicks', () => {
   test('a note with no front matter has no ticks', () => {
     const r = readTicks(null, members)
     expect(r).toEqual({
-      ok: true, skillIds: [], domainIds: [], skillNames: [], domainNames: [],
+      ok: true, reason: '', skillIds: [], domainIds: [], skillNames: [], domainNames: [],
       unknown: [], bunch: null, usedAliases: false, tagCount: 0
     })
+  })
+
+  test('a readable note has no reason', () => {
+    expect(readTicks('---\nskills: [writer]\n---\n', members).reason).toBe('')
+  })
+
+  test('the bunch and path keys written twice report ok false', () => {
+    for (const key of ['bunch', 'skill_paths', 'domain_paths', 'agent_paths', 'artifact_paths']) {
+      const r = readTicks(`---\n${key}: a\ntitle: x\n${key}: b\n---\n`, members)
+      expect(r.ok).toBe(false)
+      expect(r.reason).toBe(`The key ${key} appears twice at the top of this note.`)
+    }
+  })
+
+  test('says in plain words why the YAML cannot be ticked', () => {
+    expect(readTicks('---\nskills: [writer]\nskills: [editor]\n---\n', members).reason).toBe(
+      'The key skills appears twice at the top of this note.'
+    )
+    expect(readTicks('---\nskills:\n  - writer\n  - name: editor\n---\n', members).reason).toBe(
+      'An item under skills is not a plain name.'
+    )
+    expect(readTicks('---\ndomains:\n  a: Biology\n---\n', members).reason).toBe(
+      'domains holds a group of settings instead of a list.'
+    )
+    const broken = readTicks('---\ntitle: My note: draft\n---\n', members).reason
+    expect(broken).toContain('Nested mappings are not allowed')
+    expect(broken).toContain('line 1')
+    expect(broken).not.toContain('\n')
   })
 
   test('maps names to ids, ignoring case', () => {
@@ -321,6 +349,13 @@ describe('applyTicks', () => {
   test('refuses to rewrite a list key written twice', () => {
     const raw = '---\nskills: [writer]\nskills: [ghost]\n---\n'
     expect(applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
+  })
+
+  test('refuses to rewrite when bunch or a paths key is written twice', () => {
+    for (const key of ['bunch', 'skill_paths', 'domain_paths', 'agent_paths', 'artifact_paths']) {
+      const raw = `---\n${key}: a\n${key}: b\n---\n`
+      expect(applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, { ...opts, bunch: 'x' })).toBeNull()
+    }
   })
 
   test('never writes the same name twice, keeping the first and its path', () => {

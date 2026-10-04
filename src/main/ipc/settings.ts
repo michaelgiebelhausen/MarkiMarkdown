@@ -1,11 +1,12 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import log from 'electron-log/main'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/types'
 import { migrateSettings } from '../../shared/migrate'
 import { backupOnce, backupUnique } from './backup'
 import { judgeRead, readOutcome } from './readGuard'
+import { replaceFileSync } from './writeGuard'
 
 let cache: Settings | null = null
 /** The file on disk could not be understood: copy it aside before the first save replaces it. */
@@ -114,9 +115,7 @@ export function writeSettings(next: Partial<Settings>): { settings: Settings; pe
   try {
     const target = settingsPath()
     mkdirSync(dirname(target), { recursive: true })
-    const temp = `${target}.tmp`
-    writeFileSync(temp, JSON.stringify(merged, null, 2), 'utf8')
-    renameSync(temp, target)
+    replaceFileSync(target, JSON.stringify(merged, null, 2))
     return { settings: merged, persisted: true }
   } catch (error) {
     log.error('Could not save settings', error)

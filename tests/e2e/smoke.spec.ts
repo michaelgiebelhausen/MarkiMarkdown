@@ -156,6 +156,8 @@ test('a divider drag ends when a pane is toggled in the middle of it', async () 
 })
 
 test('settings that cannot be saved are reported once, and the warning stays', async () => {
+  // Elsewhere a read-only file can still be renamed over, so the save would succeed.
+  test.skip(process.platform !== 'win32', 'Windows-only file locking')
   const dirs = prepare()
   h = await launch(dirs)
   const file = join(dirs.userData, 'settings.json')
