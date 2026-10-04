@@ -439,6 +439,19 @@ describe('addArchived', () => {
     expect(out).not.toContain('old')
   })
 
+  test('writes archived exactly once when the source has the key twice', () => {
+    const out = addArchived('---\narchived: a\nid: 1\narchived: b\n---\nb\n', 'new') as string
+    expect(out.match(/^archived:/gm)).toHaveLength(1)
+    expect(out).toContain('archived: new')
+    expect(out).toContain('id: 1')
+    expect(out.endsWith('---\nb\n')).toBe(true)
+  })
+
+  test('keeps CRLF and drops every archived key', () => {
+    const out = addArchived('---\r\narchived: a\r\narchived: b\r\n---\r\nbody\r\n', 'new') as string
+    expect(out).toBe('---\r\narchived: new\r\n---\r\nbody\r\n')
+  })
+
   test('gives a note with no front matter a block', () => {
     expect(addArchived('x\n', 'now')).toBe('---\narchived: now\n---\nx\n')
   })

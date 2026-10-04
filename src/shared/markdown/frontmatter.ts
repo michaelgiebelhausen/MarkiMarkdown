@@ -6,7 +6,7 @@
  *  - never drop unknown keys, comments or quoting the student wrote
  *  - never coerce dates into Date objects (that silently rewrites `created: 2026-08-21`)
  */
-import { Document, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
+import { Document, isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
 
 export interface SplitResult {
   /** The whole block including both fences and the trailing newline, or null. */
@@ -295,6 +295,19 @@ export function stampNote(text: string, stamp: Stamp): string {
  */
 export function addArchived(text: string, archivedAt: string): string | null {
   const { raw, body } = splitFrontMatter(text)
-  if (raw !== null && !parseFrontMatter(raw).ok) return null
-  return mergeFrontMatter(raw, { archived: archivedAt }) + body
+  if (raw === null) return mergeFrontMatter(null, { archived: archivedAt }) + body
+  if (!parseFrontMatter(raw).ok) return null
+  const doc = readDocument(raw)
+  if (!doc) return null
+  if (doc.contents === null) doc.contents = doc.createNode({}) as Document['contents']
+  // Duplicate keys are allowed when reading, and set() only replaces the first one, so a
+  // copy archived from an archive could otherwise carry two stamps. Drop them all first.
+  if (isMap(doc.contents)) {
+    doc.contents.items = doc.contents.items.filter((pair) => {
+      const key = isScalar(pair.key) ? pair.key.value : pair.key
+      return key !== 'archived'
+    })
+  }
+  applyPatch(doc, { archived: archivedAt })
+  return serialise(doc, detectEol(raw)) + body
 }

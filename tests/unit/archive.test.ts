@@ -24,6 +24,30 @@ describe('archive names', () => {
     )
   })
 
+  test('a very long name is cut so the whole archive file name fits in 255 characters', () => {
+    const stem = archiveStem(`${'x'.repeat(300)}.md`, '2026-10-04')
+    expect(stem).toBe(`${'x'.repeat(237)}-2026-10-04`)
+    expect(`${stem}-999.md`.length).toBe(255)
+    expect(archiveName(`${'x'.repeat(300)}.md`, '2026-10-04', []).length).toBeLessThanOrEqual(255)
+  })
+
+  test('cutting never splits an emoji in half', () => {
+    const stem = archiveStem(`ab${'\u{1F600}'.repeat(150)}.md`, '2026-10-04')
+    const base = stem.slice(0, -'-2026-10-04'.length)
+    expect(base.length).toBe(236)
+    expect(/[\uD800-\uDBFF]$/.test(base)).toBe(false)
+    expect(base.endsWith('\u{1F600}')).toBe(true)
+  })
+
+  test('a cut that ends in spaces or dots drops them', () => {
+    const stem = archiveStem(`${'x'.repeat(234)} . ${'y'.repeat(50)}.md`, '2026-10-04')
+    expect(stem).toBe(`${'x'.repeat(234)}-2026-10-04`)
+  })
+
+  test('short names are not touched', () => {
+    expect(archiveStem('essay. .md', '2026-10-04')).toBe('essay. -2026-10-04')
+  })
+
   test('freeName works for any stem', () => {
     expect(freeName('cells', ['cells.md'])).toBe('cells-2.md')
   })
@@ -48,6 +72,11 @@ describe('planSave', () => {
     [{ workingDir: '/raw' }, BLOCK_REASONS.sameFolder]
   ])('blocks with %o', (change, reason) => {
     expect(planSave({ ...good, ...change })).toEqual({ canArchive: false, reason })
+  })
+
+  test('a raw path of only spaces counts as no raw folder', () => {
+    expect(planSave({ ...good, rawPath: '   ' })).toEqual({ canArchive: false, reason: BLOCK_REASONS.noRaw })
+    expect(planSave({ ...good, rawPath: '\t\n' }).reason).toBe(BLOCK_REASONS.noRaw)
   })
 
   test('gives the first reason in the spec order', () => {
