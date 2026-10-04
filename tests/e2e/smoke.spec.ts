@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { launch, prepare, type Harness } from './helpers'
 
 let h: Harness
@@ -59,15 +61,33 @@ test('a table survives an edit to a neighbouring paragraph', async () => {
   expect(h.errors).toEqual([])
 })
 
-test('the view toggle switches between code, split and text', async () => {
-  h = await launch(prepare())
-  await h.page.getByRole('button', { name: 'Code' }).click()
-  await expect(h.page.locator('.pane-rendered')).toHaveCount(0)
-  await h.page.getByRole('button', { name: 'Text' }).click()
-  await expect(h.page.locator('.pane-code')).toHaveCount(0)
-  await h.page.getByRole('button', { name: 'Split' }).click()
+test('the pane selector shows and hides panes and remembers the choice', async () => {
+  const dirs = prepare()
+  h = await launch(dirs)
+  const bunch = h.page.getByRole('checkbox', { name: 'Funky Bunch' })
+  const raw = h.page.getByRole('checkbox', { name: 'Raw Markdown' })
+  const rendered = h.page.getByRole('checkbox', { name: 'Rendered Marki' })
+
+  await expect(h.page.locator('.pane-bunch')).toBeVisible()
   await expect(h.page.locator('.pane-code')).toBeVisible()
   await expect(h.page.locator('.pane-rendered')).toBeVisible()
+
+  await raw.uncheck()
+  await expect(h.page.locator('.pane-code')).toHaveCount(0)
+  await bunch.uncheck()
+  await expect(h.page.locator('.pane-bunch')).toHaveCount(0)
+
+  // the last pane cannot be switched off
+  await rendered.click()
+  await expect(rendered).toBeChecked()
+  await expect(h.page.locator('.pane-rendered')).toBeVisible()
+
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).panes)
+    .toEqual({ bunch: false, raw: false, rendered: true })
+
+  await raw.check()
+  await expect(h.page.locator('.pane-code')).toBeVisible()
   expect(h.errors).toEqual([])
 })
 

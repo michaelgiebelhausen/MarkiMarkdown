@@ -12,7 +12,9 @@ import { TeamBoard } from './funkybunch/TeamBoard'
 import { SettingsDialog } from './ui/SettingsDialog'
 import { HelpDialog } from './ui/HelpDialog'
 import { PromptDialog } from './ui/PromptDialog'
-import { TopBar, type ViewMode } from './ui/TopBar'
+import { TopBar } from './ui/TopBar'
+import { PaneLayout } from './layout/PaneLayout'
+import { togglePane, type PaneKey } from './layout/paneMath'
 import { ToastStack, type ToastMessage } from './ui/Toast'
 import { planFiling } from './funkybunch/selection'
 import { baseName, dirName, samePath } from '@shared/paths'
@@ -45,7 +47,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [selectedBunchId, setSelectedBunchId] = useState<string | null>(null)
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
-  const [view, setView] = useState<ViewMode>('split')
+  const [hiddenPanes, setHiddenPanes] = useState<PaneKey[]>([])
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [dialog, setDialog] = useState<DialogState>(null)
   const [busy, setBusy] = useState('')
@@ -83,7 +85,19 @@ export default function App() {
     return result
   }, [])
 
-  const members = settings?.members ?? []
+  // Optimistic, so the checkbox flips in the same frame as the click.
+  const togglePaneKey = useCallback(
+    (key: PaneKey) => {
+      if (!settings) return
+      const panes = togglePane(settings.panes, key)
+      if (panes === settings.panes) return
+      setSettings({ ...settings, panes })
+      void window.marki.settings.write({ panes })
+    },
+    [settings]
+  )
+
+  const members =settings?.members ?? []
   const bunches = settings?.bunches ?? []
 
   /* ---------------- note identity ---------------- */
@@ -544,9 +558,9 @@ export default function App() {
         case 'convert': return convert()
         case 'ai-clean': return void cleanWithAi()
         case 'file-to': return void runFiling()
-        case 'view-code': return setView('code')
-        case 'view-split': return setView('split')
-        case 'view-text': return setView('text')
+        case 'toggle-pane-bunch': return togglePaneKey('bunch')
+        case 'toggle-pane-raw': return togglePaneKey('raw')
+        case 'toggle-pane-rendered': return togglePaneKey('rendered')
         case 'settings': return setDialog({ kind: 'settings' })
         case 'help': return setDialog({ kind: 'help' })
         case 'diagnostics': return void (async () => {
@@ -559,7 +573,7 @@ export default function App() {
         default: return
       }
     },
-    [openFile, saveNow, addProperties, tidy, convert, cleanWithAi, runFiling, doc.fileName, doc.paths, pushToast]
+    [openFile, saveNow, addProperties, tidy, convert, cleanWithAi, runFiling, togglePaneKey, doc.fileName, doc.paths, pushToast]
   )
 
   useEffect(() => window.marki.on.menuAction(handleAction), [handleAction])
@@ -735,9 +749,10 @@ export default function App() {
           canFile={plan.canFile}
           blockedReason={plan.blockedReason}
           hasPending={plan.bunch !== null}
-          view={view}
+          panes={settings.panes}
+          hiddenPanes={hiddenPanes}
+          onTogglePane={togglePaneKey}
           busy={busy}
-          onSetView={setView}
           onFile={() => void runFiling()}
           onClearSelection={() => setSelectedBunchId(null)}
           onMenu={handleAction}
@@ -747,54 +762,71 @@ export default function App() {
           }}
         />
 
-        <div className={`panes ${view}`}>
-          {view !== 'text' && (
-            <section className="pane pane-code" aria-label="Markdown source">
-              <CodePane
-                store={store}
-                text={doc.fullText}
-                sync={sync}
-                onFocusOwner={() => store.setOwner('code')}
-                registerCommands={(api) => {
-                  codeCommands.current = api
-                }}
-              />
-            </section>
-          )}
-          {view !== 'code' && (
-            <section className="pane pane-rendered" aria-label="Readable text">
-              <div className="pane-inner">
-                {doc.isPlainText && looksLikePlainText(doc.body) && (
-                  <div className="notice">
-                    <span>This looks like plain text.</span>
-                    <button className="btn btn-quiet" onClick={convert}>
-                      Convert to Markdown
-                    </button>
+        <PaneLayout
+          panes={settings.panes}
+          widths={settings.paneWidths}
+          onWidths={(paneWidths) => void saveSettings({ paneWidths })}
+          onHiddenChange={setHiddenPanes}
+          render={(key) => {
+            if (key === 'bunch') {
+              return (
+                <section key="bunch" className="pane pane-bunch" aria-label="Funky Bunch">
+                  <div className="locations">
+                    <p className="muted">Funky Bunch</p>
                   </div>
-                )}
-                <PropertiesPanel
-                  raw={doc.frontMatterRaw}
-                  onChange={(raw) => {
-                    store.setFrontMatter(raw, null)
-                    store.commitUndoGroup()
-                  }}
-                  knownTags={knownTags}
-                />
-                <RenderedPane
-                  store={store}
-                  body={doc.body}
-                  version={doc.version}
-                  sync={sync}
-                  onFocusOwner={() => store.setOwner('rendered')}
-                  onRequestLink={() => setAskingLink(true)}
-                  registerCommands={(api) => {
-                    commands.current = api
-                  }}
-                />
-              </div>
-            </section>
-          )}
-        </div>
+                </section>
+              )
+            }
+            if (key === 'raw') {
+              return (
+                <section key="raw" className="pane pane-code" aria-label="Markdown source">
+                  <CodePane
+                    store={store}
+                    text={doc.fullText}
+                    sync={sync}
+                    onFocusOwner={() => store.setOwner('code')}
+                    registerCommands={(api) => {
+                      codeCommands.current = api
+                    }}
+                  />
+                </section>
+              )
+            }
+            return (
+              <section key="rendered" className="pane pane-rendered" aria-label="Readable text">
+                <div className="pane-inner">
+                  {doc.isPlainText && looksLikePlainText(doc.body) && (
+                    <div className="notice">
+                      <span>This looks like plain text.</span>
+                      <button className="btn btn-quiet" onClick={convert}>
+                        Convert to Markdown
+                      </button>
+                    </div>
+                  )}
+                  <PropertiesPanel
+                    raw={doc.frontMatterRaw}
+                    onChange={(raw) => {
+                      store.setFrontMatter(raw, null)
+                      store.commitUndoGroup()
+                    }}
+                    knownTags={knownTags}
+                  />
+                  <RenderedPane
+                    store={store}
+                    body={doc.body}
+                    version={doc.version}
+                    sync={sync}
+                    onFocusOwner={() => store.setOwner('rendered')}
+                    onRequestLink={() => setAskingLink(true)}
+                    registerCommands={(api) => {
+                      commands.current = api
+                    }}
+                  />
+                </div>
+              </section>
+            )
+          }}
+        />
       </div>
 
       <ToastStack toasts={toasts} dismiss={dismissToast} />

@@ -80,9 +80,9 @@ export function buildMenu(getWindow: GetWindow, newWindow: () => BrowserWindow):
   template.push({
     label: 'View',
     submenu: [
-      { label: 'Code Only', accelerator: 'CmdOrCtrl+1', click: () => send(getWindow, 'view-code') },
-      { label: 'Split', accelerator: 'CmdOrCtrl+2', click: () => send(getWindow, 'view-split') },
-      { label: 'Text Only', accelerator: 'CmdOrCtrl+3', click: () => send(getWindow, 'view-text') },
+      { label: 'Funky Bunch', accelerator: 'CmdOrCtrl+1', click: () => send(getWindow, 'toggle-pane-bunch') },
+      { label: 'Raw Markdown', accelerator: 'CmdOrCtrl+2', click: () => send(getWindow, 'toggle-pane-raw') },
+      { label: 'Rendered Marki', accelerator: 'CmdOrCtrl+3', click: () => send(getWindow, 'toggle-pane-rendered') },
       { type: 'separator' },
       { label: 'Jump to Other Side', accelerator: 'CmdOrCtrl+E', click: () => send(getWindow, 'jump') },
       { type: 'separator' },

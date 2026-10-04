@@ -1,6 +1,7 @@
 import { useState } from 'react'
-
-export type ViewMode = 'code' | 'split' | 'text'
+import type { PaneSet } from '@shared/types'
+import type { PaneKey } from '@renderer/layout/paneMath'
+import { PaneSelector } from './PaneSelector'
 
 interface Props {
   fileName: string
@@ -11,9 +12,10 @@ interface Props {
   canFile: boolean
   blockedReason: string
   hasPending: boolean
-  view: ViewMode
+  panes: PaneSet
+  hiddenPanes: PaneKey[]
+  onTogglePane: (key: PaneKey) => void
   busy: string
-  onSetView: (view: ViewMode) => void
   onFile: () => void
   onClearSelection: () => void
   onMenu: (action: string) => void
@@ -85,18 +87,7 @@ export function TopBar(props: Props) {
       </div>
 
       <div className="topbar-right">
-        <div className="segmented" role="group" aria-label="View">
-          {(['code', 'split', 'text'] as const).map((mode) => (
-            <button
-              key={mode}
-              className={props.view === mode ? 'seg seg-on' : 'seg'}
-              onClick={() => props.onSetView(mode)}
-              aria-pressed={props.view === mode}
-            >
-              {mode === 'code' ? 'Code' : mode === 'split' ? 'Split' : 'Text'}
-            </button>
-          ))}
-        </div>
+        <PaneSelector panes={props.panes} hidden={props.hiddenPanes} onToggle={props.onTogglePane} />
 
         <div className="menu-wrap">
           <button className="btn btn-quiet" aria-label="More actions" onClick={() => setOpen((v) => !v)}>

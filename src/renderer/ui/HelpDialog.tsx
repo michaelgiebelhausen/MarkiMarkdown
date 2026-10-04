@@ -83,7 +83,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
           </tr>
           <tr>
             <td><code>Ctrl/Cmd + 1 / 2 / 3</code></td>
-            <td>code, split or text view</td>
+            <td>show or hide the Funky Bunch, Raw and Rendered panes</td>
           </tr>
           <tr>
             <td><code>Ctrl/Cmd + B / I</code></td>

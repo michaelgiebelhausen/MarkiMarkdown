@@ -56,7 +56,9 @@ test('a wikilink survives being made bold in the clean pane', async () => {
   const { harness } = await openWith('See [[Working memory]] today\n', 'wiki.md')
   h = harness
 
-  await h.page.locator('.pm-content p').first().click()
+  // Click the start of the line: with three panes the middle of this narrow paragraph
+  // lands on the wikilink itself, which selects the link instead of placing a cursor.
+  await h.page.locator('.pm-content p').first().click({ position: { x: 2, y: 8 } })
   await h.page.keyboard.press('Home')
   await h.page.keyboard.press('Shift+End')
   await h.page.locator('.bubble-btn[title="Bold"]').click()
