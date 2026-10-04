@@ -335,7 +335,7 @@ ipcMain.handle('filing:undo', async (event) => {
 
 ipcMain.handle('ledger:read', () => ok({ entries: readLedger() }))
 
-ipcMain.handle('ledger:append', (_e, entry: LedgerEntry) => ok({ entries: appendLedger(entry) }))
+ipcMain.handle('ledger:append', (_e, entry: LedgerEntry) => ok(appendLedger(entry)))
 
 ipcMain.handle('members:propose-kind', async (_e, path: string) => {
   try {

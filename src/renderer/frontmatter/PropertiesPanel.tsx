@@ -35,7 +35,8 @@ export function PropertiesPanel({ raw, onChange, knownTags }: Props) {
 
   const data = parsed.data
   const tags = normaliseList(data.tags)
-  const skills = normaliseList(data.skills)
+  // Notes written by 1.1 carry `agents:` where 1.2 writes `skills:`.
+  const skills = normaliseList(data.skills !== undefined ? data.skills : data.agents)
   const type = typeof data.type === 'string' ? data.type : ''
   const title = typeof data.title === 'string' ? data.title : ''
 

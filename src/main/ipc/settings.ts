@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import log from 'electron-log/main'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/types'
 import { migrateSettings } from '../../shared/migrate'
+import { backupOnce } from './backup'
 
 let cache: Settings | null = null
 
@@ -19,7 +20,11 @@ export function readSettings(): Settings {
   if (cache) return cache
   try {
     const raw = readFileSync(settingsPath(), 'utf8')
-    cache = migrateSettings(JSON.parse(raw))
+    const parsed = JSON.parse(raw) as unknown
+    const version =
+      parsed !== null && typeof parsed === 'object' ? (parsed as { schemaVersion?: unknown }).schemaVersion : undefined
+    if (version !== 3) backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.v2.bak.json'))
+    cache = migrateSettings(parsed)
   } catch {
     cache = { ...DEFAULT_SETTINGS }
   }

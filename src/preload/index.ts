@@ -41,7 +41,7 @@ const api = {
   },
   ledger: {
     read: (): Promise<Result<{ entries: LedgerEntry[] }>> => ipcRenderer.invoke('ledger:read'),
-    append: (entry: LedgerEntry): Promise<Result<{ entries: LedgerEntry[] }>> =>
+    append: (entry: LedgerEntry): Promise<Result<{ entries: LedgerEntry[]; saved: boolean }>> =>
       ipcRenderer.invoke('ledger:append', entry)
   },
   members: {

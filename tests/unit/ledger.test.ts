@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { lastBunchFor, pairCounts, pairKey } from '@shared/ledger'
+import { archiveCount, isLegacyLedger, lastBunchFor, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
 import type { LedgerEntry } from '@shared/types'
 
 const entries: LedgerEntry[] = [
@@ -39,5 +39,48 @@ describe('lastBunchFor', () => {
   test('returns undefined for an unknown or empty note id', () => {
     expect(lastBunchFor(entries, 'n9')).toBeUndefined()
     expect(lastBunchFor(entries, '')).toBeUndefined()
+  })
+})
+
+describe('normaliseLedgerEntry', () => {
+  test('passes a 1.2 entry through', () => {
+    const entry = { noteId: 'n', bunchId: 'b', skillIds: ['s'], domainIds: ['d'], archivedAt: 't' }
+    expect(normaliseLedgerEntry(entry)).toEqual(entry)
+  })
+
+  test('reads a 1.1 entry under the new names', () => {
+    expect(
+      normaliseLedgerEntry({ noteId: 'n', bunchId: 'b', agentIds: ['a'], artifactIds: ['x'], filedAt: 't' })
+    ).toEqual({ noteId: 'n', bunchId: 'b', skillIds: ['a'], domainIds: ['x'], archivedAt: 't' })
+  })
+
+  test('rejects entries with missing or malformed fields', () => {
+    expect(normaliseLedgerEntry(null)).toBeNull()
+    expect(normaliseLedgerEntry([])).toBeNull()
+    expect(normaliseLedgerEntry({ noteId: 'n', bunchId: 'b', skillIds: ['s'], domainIds: ['d'] })).toBeNull()
+    expect(
+      normaliseLedgerEntry({ noteId: 'n', bunchId: 'b', skillIds: [1], domainIds: ['d'], archivedAt: 't' })
+    ).toBeNull()
+  })
+})
+
+describe('isLegacyLedger', () => {
+  test('is true when any entry still uses the 1.1 names', () => {
+    expect(isLegacyLedger([{ noteId: 'n', bunchId: 'b', agentIds: [], artifactIds: [], filedAt: 't' }])).toBe(true)
+  })
+
+  test('is false for a 1.2 ledger, an empty one, or rubbish', () => {
+    expect(isLegacyLedger([{ noteId: 'n', bunchId: 'b', skillIds: [], domainIds: [], archivedAt: 't' }])).toBe(false)
+    expect(isLegacyLedger([])).toBe(false)
+    expect(isLegacyLedger('nope')).toBe(false)
+  })
+})
+
+describe('archiveCount', () => {
+  test('counts the archive copies of one note', () => {
+    expect(archiveCount(entries, 'n1')).toBe(2)
+    expect(archiveCount(entries, 'n2')).toBe(1)
+    expect(archiveCount(entries, 'n9')).toBe(0)
+    expect(archiveCount(entries, '')).toBe(0)
   })
 })
