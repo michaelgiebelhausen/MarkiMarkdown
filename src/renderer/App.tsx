@@ -105,21 +105,32 @@ export default function App() {
    * settings, so an older reply landing after a newer write was sent is safely skipped:
    * applying it would briefly undo that newer change (an optimistic pane toggle, say).
    * Each reply is still checked for "not saved to disk".
+   *
+   * A write that fails is reported here, once, so every caller (the dialogs, the settings
+   * checkboxes, the pane toggles) tells the student; callers only decide what to do next.
    */
   const saveSettings = useCallback(
     async (patch: Partial<Settings>) => {
       const ticket = ++settingsWrites.current
-      const result = await window.marki.settings.write(patch)
-      if (result.ok) {
-        if (!result.persisted) warnNotSaving('settings')
-        if (ticket === settingsWrites.current) {
-          settingsRef.current = result.settings
-          setSettings(result.settings)
-        }
+      const failed = "Your change couldn't be saved. Try again."
+      let result: Awaited<ReturnType<typeof window.marki.settings.write>>
+      try {
+        result = await window.marki.settings.write(patch)
+      } catch {
+        result = { ok: false, message: failed }
+      }
+      if (!result.ok) {
+        pushToast({ text: result.message || failed, tone: 'warn' })
+        return result
+      }
+      if (!result.persisted) warnNotSaving('settings')
+      if (ticket === settingsWrites.current) {
+        settingsRef.current = result.settings
+        setSettings(result.settings)
       }
       return result
     },
-    [warnNotSaving]
+    [warnNotSaving, pushToast]
   )
 
   // Optimistic, so the checkbox flips in the same frame as the click.
@@ -503,71 +514,73 @@ export default function App() {
     [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, togglePaneKey, doc.fileName, doc.paths, pushToast]
   )
 
-  useEffect(() => window.marki.on.menuAction(handleAction), [handleAction])
+  // saveFlow is a new object every render, so handleAction is too. The menu listener is
+  // attached once and always calls the newest handleAction through this ref.
+  const handleActionRef = useRef(handleAction)
+  handleActionRef.current = handleAction
+  useEffect(() => window.marki.on.menuAction((action) => handleActionRef.current(action)), [])
 
   /* ---------------- roster and bunch editing ---------------- */
 
   const closeDialog = useCallback(() => setDialog(null), [])
 
+  // Each of these builds its new list from settingsRef at the moment it runs, not from the
+  // lists the last render saw, so a change that landed since is never written back over.
+  // saveSettings reports a failed write; a dialog then stays open so nothing is lost.
+
   const upsertMember = useCallback(
     async (member: Member) => {
-      const next = members.some((m) => m.id === member.id)
-        ? members.map((m) => (m.id === member.id ? member : m))
-        : [...members, member]
+      const current = settingsRef.current
+      if (!current) return
+      const list = current.members
+      const next = list.some((m) => m.id === member.id)
+        ? list.map((m) => (m.id === member.id ? member : m))
+        : [...list, member]
       const result = await saveSettings({ members: next })
-      if (!result.ok) {
-        pushToast({ text: result.message, tone: 'warn' })
-        return
-      }
-      closeDialog()
+      if (result.ok) closeDialog()
     },
-    [members, saveSettings, closeDialog, pushToast]
+    [saveSettings, closeDialog]
   )
 
   const removeMember = useCallback(
     async (id: string) => {
+      const current = settingsRef.current
+      if (!current) return
       const result = await saveSettings({
-        members: members.filter((m) => m.id !== id),
-        bunches: bunches.map((b) => ({
+        members: current.members.filter((m) => m.id !== id),
+        bunches: current.bunches.map((b) => ({
           ...b,
           skillIds: b.skillIds.filter((x) => x !== id),
           domainIds: b.domainIds.filter((x) => x !== id)
         }))
       })
-      if (!result.ok) {
-        pushToast({ text: result.message, tone: 'warn' })
-        return
-      }
-      closeDialog()
+      if (result.ok) closeDialog()
     },
-    [members, bunches, saveSettings, closeDialog, pushToast]
+    [saveSettings, closeDialog]
   )
 
   const upsertBunch = useCallback(
     async (bunch: Bunch) => {
-      const next = bunches.some((b) => b.id === bunch.id)
-        ? bunches.map((b) => (b.id === bunch.id ? bunch : b))
-        : [...bunches, bunch]
+      const current = settingsRef.current
+      if (!current) return
+      const list = current.bunches
+      const next = list.some((b) => b.id === bunch.id)
+        ? list.map((b) => (b.id === bunch.id ? bunch : b))
+        : [...list, bunch]
       const result = await saveSettings({ bunches: next })
-      if (!result.ok) {
-        pushToast({ text: result.message, tone: 'warn' })
-        return
-      }
-      closeDialog()
+      if (result.ok) closeDialog()
     },
-    [bunches, saveSettings, closeDialog, pushToast]
+    [saveSettings, closeDialog]
   )
 
   const removeBunch = useCallback(
     async (id: string) => {
-      const result = await saveSettings({ bunches: bunches.filter((b) => b.id !== id) })
-      if (!result.ok) {
-        pushToast({ text: result.message, tone: 'warn' })
-        return
-      }
-      closeDialog()
+      const current = settingsRef.current
+      if (!current) return
+      const result = await saveSettings({ bunches: current.bunches.filter((b) => b.id !== id) })
+      if (result.ok) closeDialog()
     },
-    [bunches, saveSettings, closeDialog, pushToast]
+    [saveSettings, closeDialog]
   )
 
   const editBunch = useCallback(

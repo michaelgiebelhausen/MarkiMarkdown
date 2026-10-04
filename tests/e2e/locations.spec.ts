@@ -158,6 +158,25 @@ test('a new bunch cannot take a name another bunch already has', async () => {
   expect(h.errors).toEqual([])
 })
 
+test('a settings write that fails says so and keeps the dialog open', async () => {
+  await openNote('---\nskills: [librarian]\n---\n# Note\n', (dirs) => ({ ...team(dirs), defaultRawPath: dirs.raw }))
+  // Make every settings write fail the way a broken IPC call does: the promise rejects.
+  await h.app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('settings:write')
+    ipcMain.handle('settings:write', () => {
+      throw new Error('refused for this test')
+    })
+  })
+  await pane().getByRole('button', { name: '+ Save as bunch' }).click()
+  const dialog = h.page.getByRole('dialog', { name: 'Make a bunch' })
+  await dialog.getByRole('textbox', { name: 'Name' }).fill('revision')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(h.page.locator('.toast')).toContainText("Your change couldn't be saved. Try again.")
+  await expect(dialog).toBeVisible()
+  await expect(pane().locator('.bunch-chip')).toHaveCount(1)
+  expect(h.errors).toEqual([])
+})
+
 test('clicking a square whose skill and domain are both ticked unticks both', async () => {
   await openNote('---\nskills: [librarian]\ndomains: [thesis]\n---\n# Note\n')
   const cell = pane().getByRole('button', { name: 'librarian and thesis: 0 notes' })
