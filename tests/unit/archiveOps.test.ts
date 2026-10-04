@@ -45,6 +45,8 @@ interface Fake extends ArchiveOps {
   raceOn: Set<string>
   createError?: Error
   renameError?: Error
+  copyError?: Error
+  listError?: Error
 }
 
 function fake(folders: string[], files: Record<string, string> = {}): Fake {
@@ -55,6 +57,7 @@ function fake(folders: string[], files: Record<string, string> = {}): Fake {
       return folders.includes(path)
     },
     async listNames(dir) {
+      if (disk.listError) throw disk.listError
       return [...disk.files.keys()].filter((p) => dirname(p) === dir).map((p) => basename(p))
     },
     async createExclusive(path, text) {
@@ -69,6 +72,7 @@ function fake(folders: string[], files: Record<string, string> = {}): Fake {
       return true
     },
     async copyExclusive(from, to) {
+      if (disk.copyError) throw disk.copyError
       if (disk.files.has(to)) return false
       disk.files.set(to, disk.files.get(from) as string)
       return true
@@ -140,6 +144,46 @@ describe('writeArchiveCopy', () => {
     disk.createError = errno('EACCES')
     const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
     expect(!result.ok && result.message).toContain("can't be written to")
+    expect(!result.ok && result.message).toContain('permission')
+  })
+
+  test('a full disk says so', async () => {
+    const disk = fake([RAW])
+    disk.createError = errno('ENOSPC')
+    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+    expect(result).toEqual({ ok: false, message: 'There is no space left on the disk.' })
+  })
+
+  test('EPERM is a permissions problem too', async () => {
+    const disk = fake([RAW])
+    disk.createError = errno('EPERM')
+    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+    expect(!result.ok && result.message).toContain("can't be written to")
+    expect(!result.ok && result.message).toContain('permission')
+  })
+
+  test('a name that is too long says so', async () => {
+    const disk = fake([RAW])
+    disk.createError = errno('ENAMETOOLONG')
+    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+    expect(!result.ok && result.message).toContain('name is too long')
+  })
+
+  test('an unknown failure keeps the general message', async () => {
+    const disk = fake([RAW])
+    disk.createError = errno('EIO')
+    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+    expect(result).toEqual({
+      ok: false,
+      message: "The folder can't be written to. It may be open in another program, or syncing."
+    })
+  })
+
+  test('a folder that cannot be listed reports the reason', async () => {
+    const disk = fake([RAW])
+    disk.listError = errno('EACCES')
+    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+    expect(!result.ok && result.message).toContain('permission')
   })
 })
 
@@ -193,5 +237,48 @@ describe('moveWorkingFile', () => {
     const result = await moveWorkingFile(disk, from, OTHER)
     expect(!result.ok && result.message).toContain("couldn't be moved")
     expect(disk.files.get(from)).toBe('T')
+  })
+
+  test('a note that vanished before the move says it could not be found', async () => {
+    const disk = fake([DRAFTS, OTHER])
+    disk.renameError = errno('ENOENT')
+    const result = await moveWorkingFile(disk, from, OTHER)
+    expect(result).toEqual({
+      ok: false,
+      message: "The note couldn't be found. It may have been moved or renamed outside MarkiMarkdown."
+    })
+  })
+
+  test('a target folder that vanished before the rename is reported as the folder', async () => {
+    const disk = fake([DRAFTS, OTHER], { [from]: 'T' })
+    disk.renameError = errno('ENOENT')
+    const result = await moveWorkingFile(disk, from, OTHER)
+    expect(!result.ok && result.message).toContain("folder can't be found")
+    expect(disk.files.get(from)).toBe('T')
+  })
+
+  test('a rename refused for permissions says so', async () => {
+    const disk = fake([DRAFTS, OTHER], { [from]: 'T' })
+    disk.renameError = errno('EACCES')
+    const result = await moveWorkingFile(disk, from, OTHER)
+    expect(!result.ok && result.message).toContain('permission')
+    expect(disk.files.get(from)).toBe('T')
+  })
+
+  test('a full disk during a cross-drive copy says so and keeps the original', async () => {
+    const disk = fake([DRAFTS, OTHER], { [from]: 'T' })
+    disk.renameError = errno('EXDEV')
+    disk.copyError = errno('ENOSPC')
+    const result = await moveWorkingFile(disk, from, OTHER)
+    expect(result).toEqual({ ok: false, message: 'There is no space left on the disk.' })
+    expect(disk.files.get(from)).toBe('T')
+  })
+
+  test('an unknown cross-drive copy failure keeps the general message', async () => {
+    const disk = fake([DRAFTS, OTHER], { [from]: 'T' })
+    disk.renameError = errno('EXDEV')
+    disk.copyError = errno('EIO')
+    const result = await moveWorkingFile(disk, from, OTHER)
+    expect(!result.ok && result.message).toContain("can't be written to")
   })
 })

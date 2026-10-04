@@ -4,9 +4,17 @@ import { join, dirname } from 'node:path'
 import log from 'electron-log/main'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/types'
 import { migrateSettings } from '../../shared/migrate'
-import { backupOnce } from './backup'
+import { backupOnce, backupUnique } from './backup'
+import { judgeRead, readOutcome } from './readGuard'
 
 let cache: Settings | null = null
+/** The file on disk could not be understood: copy it aside before the first save replaces it. */
+let corruptNeedsBackup = false
+/**
+ * The file on disk is there but could not be read, or could not be backed up. The app
+ * runs on defaults in memory and never writes over it this session.
+ */
+let doNotPersist = false
 
 function settingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
@@ -16,28 +24,80 @@ function secretPath(): string {
   return join(app.getPath('userData'), 'apikey.bin')
 }
 
+/** The schema version a parsed file says it has; a file from before versions is 2. */
+function oldVersion(parsed: unknown): number {
+  const version =
+    parsed !== null && typeof parsed === 'object' ? (parsed as { schemaVersion?: unknown }).schemaVersion : undefined
+  return typeof version === 'number' && Number.isInteger(version) && version >= 0 ? version : 2
+}
+
+/** Settings are one JSON object; a list, a number or null is not settings and is kept aside. */
+function parseSettingsObject(text: string): Record<string, unknown> {
+  const parsed = JSON.parse(text) as unknown
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Not a settings object')
+  return parsed as Record<string, unknown>
+}
+
 export function readSettings(): Settings {
   if (cache) return cache
-  try {
-    let raw = readFileSync(settingsPath(), 'utf8')
-    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
-    const parsed = JSON.parse(raw) as unknown
-    const version =
-      parsed !== null && typeof parsed === 'object' ? (parsed as { schemaVersion?: unknown }).schemaVersion : undefined
-    if (version !== DEFAULT_SETTINGS.schemaVersion) backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.v2.bak.json'))
-    cache = migrateSettings(parsed)
-  } catch {
-    // The file exists but could not be read as settings (backupOnce does nothing when it
-    // is simply missing). Keep a copy before the defaults overwrite it on the next save.
-    backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.corrupt.bak.json'))
-    cache = { ...DEFAULT_SETTINGS }
+  const result = judgeRead(readOutcome(settingsPath()), parseSettingsObject)
+  switch (result.kind) {
+    case 'ok': {
+      const version = oldVersion(result.value)
+      if (version !== DEFAULT_SETTINGS.schemaVersion) {
+        backupOnce(settingsPath(), join(app.getPath('userData'), `settings.v${version}.bak.json`))
+      }
+      try {
+        cache = migrateSettings(result.value)
+      } catch (error) {
+        log.warn('Settings could not be migrated; using defaults and keeping the file', error)
+        corruptNeedsBackup = true
+        cache = { ...DEFAULT_SETTINGS }
+      }
+      break
+    }
+    case 'corrupt':
+      // Backed up on the first save, so an app that is opened and closed again and again
+      // does not pile up identical copies.
+      log.warn('Settings file could not be understood; using defaults until it is backed up')
+      corruptNeedsBackup = true
+      cache = { ...DEFAULT_SETTINGS }
+      break
+    case 'unreadable':
+      log.warn(`Settings file could not be read (${result.code ?? 'unknown error'}); it will not be overwritten`)
+      doNotPersist = true
+      cache = { ...DEFAULT_SETTINGS }
+      break
+    case 'missing':
+      cache = { ...DEFAULT_SETTINGS }
+      break
   }
   return cache
+}
+
+/** True when the file on disk may be replaced now. */
+function mayPersist(): boolean {
+  if (doNotPersist) return false
+  if (!corruptNeedsBackup) return true
+  const source = settingsPath()
+  const backup = backupUnique(source, dirname(source), 'settings.corrupt')
+  if (backup === null && existsSync(source)) {
+    log.warn('The unreadable settings file could not be backed up; settings will only be kept in memory')
+    doNotPersist = true
+    return false
+  }
+  if (backup !== null) log.warn(`The unreadable settings file was kept as ${backup}`)
+  corruptNeedsBackup = false
+  return true
 }
 
 export function writeSettings(next: Partial<Settings>): Settings {
   const merged = { ...readSettings(), ...next }
   cache = merged
+  if (!mayPersist()) {
+    log.warn('Settings were not saved to disk: the existing file is kept untouched')
+    return merged
+  }
   try {
     const target = settingsPath()
     mkdirSync(dirname(target), { recursive: true })

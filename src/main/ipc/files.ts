@@ -135,6 +135,41 @@ function code(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException)?.code
 }
 
+/** Removes a file this flow created itself and could not finish. A failure here is only logged. */
+async function removePartial(path: string): Promise<void> {
+  try {
+    await fsp.unlink(path)
+  } catch (error) {
+    log.warn('Could not remove an unfinished copy', path, error)
+  }
+}
+
+/**
+ * Flushes a finished copy to the disk. A copy that inherited the read-only flag cannot be
+ * opened for writing, and Windows will not flush a handle opened only for reading: that
+ * one case is logged and accepted, because copyFile itself already finished.
+ */
+async function syncCopy(path: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof fsp.open>>
+  let readOnly = false
+  try {
+    handle = await fsp.open(path, 'r+')
+  } catch (error) {
+    if (code(error) !== 'EPERM' && code(error) !== 'EACCES') throw error
+    handle = await fsp.open(path, 'r')
+    readOnly = true
+  }
+  try {
+    await handle.sync()
+  } catch (error) {
+    const refused = code(error) === 'EPERM' || code(error) === 'EACCES' || code(error) === 'EBADF'
+    if (!(readOnly && refused)) throw error
+    log.warn('Could not flush a read-only copy', path, error)
+  } finally {
+    await handle.close()
+  }
+}
+
 /** The real disk behind the save flow's ArchiveOps. */
 export const diskArchiveOps: ArchiveOps = {
   async dirExists(path) {
@@ -146,28 +181,42 @@ export const diskArchiveOps: ArchiveOps = {
   },
   listNames: (dir) => fsp.readdir(dir),
   async createExclusive(path, text) {
+    let handle: Awaited<ReturnType<typeof fsp.open>>
     try {
-      const handle = await fsp.open(path, 'wx')
+      handle = await fsp.open(path, 'wx')
+    } catch (error) {
+      if (code(error) === 'EEXIST') return false
+      throw error
+    }
+    // From here the file is ours: a write that fails half way must not leave a stub behind.
+    try {
       try {
         await handle.writeFile(text, 'utf8')
         await handle.sync()
       } finally {
         await handle.close()
       }
-      return true
     } catch (error) {
-      if (code(error) === 'EEXIST') return false
+      await removePartial(path)
       throw error
     }
+    return true
   },
   async copyExclusive(from, to) {
     try {
       await fsp.copyFile(from, to, constants.COPYFILE_EXCL)
-      return true
     } catch (error) {
       if (code(error) === 'EEXIST') return false
       throw error
     }
+    // The cross-drive move trashes the original next, so the copy must be on the disk first.
+    try {
+      await syncCopy(to)
+    } catch (error) {
+      await removePartial(to)
+      throw error
+    }
+    return true
   },
   async exists(path) {
     try {

@@ -27,6 +27,26 @@ export type WriteResult = { ok: true; path: string; notice?: string } | { ok: fa
 const MISSING = "The folder can't be found. It may have been moved, renamed, or be on a drive that isn't connected."
 const UNWRITABLE = "The folder can't be written to. It may be open in another program, or syncing."
 
+const NOT_ALLOWED = "The folder can't be written to. MarkiMarkdown doesn't have permission to save there."
+const NO_SPACE = 'There is no space left on the disk.'
+const TOO_LONG = 'The name is too long for this folder. Try a shorter note name or a folder nearer the top of the drive.'
+const NOTE_GONE = "The note couldn't be found. It may have been moved or renamed outside MarkiMarkdown."
+
+/** Says what the disk actually refused, falling back to `fallback` for anything unexpected. */
+function failureMessage(error: unknown, fallback: string): string {
+  switch ((error as NodeJS.ErrnoException)?.code) {
+    case 'ENOSPC':
+      return NO_SPACE
+    case 'EACCES':
+    case 'EPERM':
+      return NOT_ALLOWED
+    case 'ENAMETOOLONG':
+      return TOO_LONG
+    default:
+      return fallback
+  }
+}
+
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
 
 export function sanitizeFileName(input: string): string {
@@ -47,8 +67,8 @@ export async function createWithFreeName(ops: ArchiveOps, dir: string, stem: str
   let existing: string[]
   try {
     existing = await ops.listNames(dir)
-  } catch {
-    return { ok: false, message: UNWRITABLE }
+  } catch (error) {
+    return { ok: false, message: failureMessage(error, UNWRITABLE) }
   }
   for (let attempt = 0; attempt < 20; attempt++) {
     const name = freeName(stem, existing)
@@ -56,8 +76,8 @@ export async function createWithFreeName(ops: ArchiveOps, dir: string, stem: str
     let created: boolean
     try {
       created = await ops.createExclusive(path, text)
-    } catch {
-      return { ok: false, message: UNWRITABLE }
+    } catch (error) {
+      return { ok: false, message: failureMessage(error, UNWRITABLE) }
     }
     if (created) return { ok: true, path }
     // Someone else wrote that name between our listing and our write. Take the next one.
@@ -95,16 +115,22 @@ export async function moveWorkingFile(ops: ArchiveOps, from: string, toDir: stri
     await ops.rename(from, dest)
     return { ok: true, path: dest }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code !== 'EXDEV') {
-      return { ok: false, message: "The note couldn't be moved. It may be open in another program." }
+    const code = (error as NodeJS.ErrnoException)?.code
+    // ENOENT names either end: the note itself, or the folder vanishing since the check above.
+    if (code === 'ENOENT') return { ok: false, message: (await ops.exists(from)) ? MISSING : NOTE_GONE }
+    if (code !== 'EXDEV') {
+      return { ok: false, message: failureMessage(error, "The note couldn't be moved. It may be open in another program.") }
     }
   }
 
   // A rename cannot cross drives: copy byte for byte, then put the original in the trash.
   try {
     if (!(await ops.copyExclusive(from, dest))) return { ok: false, message: clash }
-  } catch {
-    return { ok: false, message: UNWRITABLE }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && !(await ops.exists(from))) {
+      return { ok: false, message: NOTE_GONE }
+    }
+    return { ok: false, message: failureMessage(error, UNWRITABLE) }
   }
   try {
     await ops.trash(from)
