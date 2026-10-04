@@ -132,7 +132,7 @@ export function PropertiesPanel({ raw, onChange, knownTags }: Props) {
           {extraKeys.length > 0 && (
             <div className="props-row props-extra">
               <span>Also here</span>
-              <span className="props-extra-list">{extraKeys.join(', ')} (edit on the left)</span>
+              <span className="props-extra-list">{extraKeys.join(', ')} (edit in the Raw Markdown pane)</span>
             </div>
           )}
         </div>

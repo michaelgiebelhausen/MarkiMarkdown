@@ -55,7 +55,7 @@ export function SettingsDialog({
       <h3 className="section-head">Archiving</h3>
       <Field
         label="Default raw folder"
-        hint="Where archive copies go when no bunch is chosen, and the starting raw folder for a new bunch."
+        hint="Where archive copies go when the bunch has none (or no bunch is chosen), and the starting raw folder for a new bunch."
       >
         <div className="row">
           <input readOnly value={settings.defaultRawPath ?? ''} placeholder="No default yet" />

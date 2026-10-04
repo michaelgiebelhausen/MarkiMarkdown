@@ -28,7 +28,8 @@ The Funky Bunch is built on one idea: the folders an AI works from come in two k
 - **Domain folders** gather everything about one subject: a course, a thesis, a band.
 
 The pane's grid has skills across the top and domains down the side. Tick the ones a note belongs to and they
-are written into its YAML straight away:
+are written into its YAML straight away. The raw pane folds the YAML to a single line to keep the note
+readable; press **View YAML** to see it:
 
 ```yaml
 skills:
@@ -39,7 +40,9 @@ domains:
   - thesis-chapter-3
 domain_paths:
   - C:/Users/me/domains/thesis-chapter-3
-tags: [skill/study-coach, domain/thesis-chapter-3]
+tags:
+  - skill/study-coach
+  - domain/thesis-chapter-3
 ```
 
 Names and paths line up index for index, so a second-brain script can grep them. The tags are for Obsidian

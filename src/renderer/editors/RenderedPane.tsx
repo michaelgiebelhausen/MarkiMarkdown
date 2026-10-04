@@ -19,7 +19,7 @@ class VerbatimView {
     const wrap = document.createElement('div')
     wrap.className = 'raw-block'
     wrap.setAttribute('contenteditable', 'false')
-    wrap.title = 'Edit this on the left'
+    wrap.title = 'Edit this in the Raw Markdown pane'
     const html = renderVerbatim(String(node.attrs.value))
     if (html) wrap.innerHTML = html
     else wrap.textContent = String(node.attrs.value)
@@ -39,7 +39,7 @@ class VerbatimInlineView {
     const span = document.createElement('span')
     span.className = 'raw-inline'
     span.setAttribute('contenteditable', 'false')
-    span.title = 'Edit this on the left'
+    span.title = 'Edit this in the Raw Markdown pane'
     span.textContent = String(node.attrs.value)
     this.dom = span
   }

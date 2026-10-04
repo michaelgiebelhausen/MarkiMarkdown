@@ -1,7 +1,7 @@
 {
   "name": "markimarkdown",
   "version": "1.2.0",
-  "description": "A simple Markdown editor that shows the code and the clean text side by side, and files notes into your second brain.",
+  "description": "A simple Markdown editor that shows the code and the clean text side by side, and gets your notes ready for your second brain.",
   "main": "./out/main/index.js",
   "author": "MarkiMarkdown",
   "license": "MIT",

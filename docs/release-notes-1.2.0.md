@@ -8,8 +8,8 @@ show or hide each one (Ctrl+1, Ctrl+2, Ctrl+3), and the dividers between them dr
 ## Skills and domains
 
 Agents are now called **skills** and artifacts are now called **domains**. Skill folders do a kind of work;
-domain folders gather everything about one subject. Your settings are converted automatically, and a backup of
-the old ones is kept as `settings.v2.bak.json` next to them.
+domain folders gather everything about one subject. Your settings and counts are converted automatically, and a
+backup of your old settings and counts is kept (`settings.v2.bak.json` and `ledger.v2.bak.json`) next to them.
 
 ## Tick, and watch the YAML change
 
@@ -27,3 +27,8 @@ File button is gone.
 New notes use `skills`, `skill_paths`, `domains` and `domain_paths` in place of `agents`, `agent_paths`,
 `artifacts` and `artifact_paths`, and tags `skill/…` and `domain/…`. Older notes keep the old keys until you
 tick something in them. Archive copies carry `archived:` in place of `filed:`.
+
+File used to **move** the note into the raw folder (with Undo). Save with Archive now leaves the note where it
+is and adds a dated copy named `<name>-YYYY-MM-DD[-n].md`. So the same note (same `id`) can appear in the raw
+folder more than once: dedupe on `id` or `archived:`. Lists in the YAML are block lists, one item per line. The
+first tick adds `id`, `type` and `created` if they are missing, and archiving adds an `id`.

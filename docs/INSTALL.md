@@ -116,11 +116,15 @@ with come in two kinds: **skill folders** do a kind of work (they hold skills an
 2. Pick a folder on your computer. If you already keep notes about a subject somewhere, pick that. If not, make a
    new folder in Documents first.
 3. Give it a short name and pick an emoji for it. Click **Save**.
-4. If you have a folder that an AI agent works from, click **Add a skill** and pick that too.
-5. Click a square in the grid. Watch the top of the note in the middle pane: the skill and domain you ticked
-   appear in its YAML.
-6. Under **Archive copy goes to raw folder**, choose your second brain's raw folder.
-7. Tick **Archive / distribute this version** and press **Save and archive**.
+4. If you have a folder that an AI agent works from, add that too. The big **Add a skill** and **Add a domain**
+   buttons only show while that list is empty; after that, use **+ Add skill** and **+ Add domain** at the edges
+   of the grid.
+5. Click the domain's name (or, if you added a skill too, a square in the grid). Press **View YAML** at the top
+   of the middle pane: the skill and domain you ticked appear as lines of YAML.
+6. Under **Archive copy goes to raw folder**, choose your second brain's raw folder. Choose a folder other than
+   the one the note is in.
+7. Tick **Archive / distribute this version** and press **Save and archive**. If the button still says plain
+   **Save**, the line under the raw folder says why.
 
 Your note stays where it is, and a dated copy lands in the raw folder, tagged with what you ticked.
 

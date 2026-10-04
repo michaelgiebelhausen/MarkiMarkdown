@@ -15,7 +15,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <h3 className="section-head">The two sides</h3>
+      <h3 className="section-head">The panes</h3>
       <p>
         The middle pane is the real Markdown, the code your note is made of. The right pane is the same note,
         tidied up. Type in either one and the other keeps up. The checkboxes at the top show or hide each pane.
@@ -60,7 +60,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
         The left pane is the <strong>Funky Bunch</strong>. Its grid has your <strong>skill folders</strong> across the
         top (folders that do a kind of work, like a CLAUDE.md and its skills) and your <strong>domain folders</strong>{' '}
         down the side (folders that gather everything about one subject). Tick the ones this note belongs to. The
-        ticks are written straight into the note&apos;s YAML, so you can watch them appear in the raw pane.
+        ticks are written straight into the note&apos;s YAML. Press <strong>View YAML</strong> in the raw pane to watch them appear.
       </p>
       <p>
         <strong>Save</strong> saves the working version where it lives. Tick <strong>Archive / distribute</strong>{' '}
