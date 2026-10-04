@@ -6,18 +6,12 @@ import { PaneSelector } from './PaneSelector'
 interface Props {
   fileName: string
   dirty: boolean
-  placeCount: number
-  placeNames: string[]
-  fileLabel: string
-  canFile: boolean
-  blockedReason: string
-  hasPending: boolean
+  archiveCount: number
+  filePath: string
   panes: PaneSet
   hiddenPanes: PaneKey[]
   onTogglePane: (key: PaneKey) => void
   busy: string
-  onFile: () => void
-  onClearSelection: () => void
   onMenu: (action: string) => void
   onCancelBusy: () => void
 }
@@ -35,46 +29,24 @@ const MENU_ITEMS: { action: string; label: string }[] = [
 export function TopBar(props: Props) {
   const [open, setOpen] = useState(false)
 
-  const placeSummary =
-    props.placeCount > 1
-      ? `${props.placeCount} places`
-      : props.placeCount === 1
-        ? props.placeNames[0]
-        : 'Not filed yet'
-
   return (
     <header className="topbar">
       <div className="topbar-left">
-        {props.hasPending ? (
-          <div className="file-action">
-            <button
-              className="btn btn-primary"
-              disabled={!props.canFile}
-              title={props.blockedReason || undefined}
-              onClick={props.onFile}
-            >
-              {props.fileLabel}
-            </button>
-            <button className="btn btn-quiet btn-tight" onClick={props.onClearSelection} aria-label="Clear selection">
-              ×
-            </button>
-            {!props.canFile && props.blockedReason && <span className="blocked">{props.blockedReason}</span>}
-          </div>
-        ) : (
-          <div
-            className="chip"
-            draggable
-            title={props.placeNames.join(', ') || 'This note has not been filed yet'}
-            onDragStart={(event) => {
-              event.dataTransfer.setData('text/marki-note', '1')
-              event.dataTransfer.effectAllowed = 'copy'
-            }}
-          >
-            <span className="chip-name">{props.fileName}</span>
-            {props.dirty && <span className="chip-dot" title="Unsaved changes" />}
-            <span className="chip-places">{placeSummary}</span>
-          </div>
-        )}
+        <div
+          className="chip"
+          draggable
+          title={props.filePath || 'This note has not been saved yet'}
+          onDragStart={(event) => {
+            event.dataTransfer.setData('text/marki-note', '1')
+            event.dataTransfer.effectAllowed = 'copy'
+          }}
+        >
+          <span className="chip-name">{props.fileName}</span>
+          {props.dirty && <span className="chip-dot" title="Unsaved changes" />}
+          <span className="chip-places">
+            {props.archiveCount > 0 ? `archived ${props.archiveCount}×` : 'not archived'}
+          </span>
+        </div>
         {props.busy && (
           <span className="busy">
             <span className="spinner" aria-hidden="true" />

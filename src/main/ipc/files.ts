@@ -3,7 +3,6 @@ import { join, dirname, basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { shell } from 'electron'
 import log from 'electron-log/main'
-import type { FileOps } from './filing'
 import type { ArchiveOps } from './archive'
 import type { LoadedFile } from '../../shared/types'
 
@@ -70,64 +69,6 @@ export function translateFsError(error: unknown, what: string): string {
     default:
       log.error('File error', error)
       return `${what} could not be opened.`
-  }
-}
-
-/** The real disk, behind the same small interface the filing tests use. */
-export const diskOps: FileOps = {
-  async dirExists(path) {
-    try {
-      return (await fsp.stat(path)).isDirectory()
-    } catch {
-      return false
-    }
-  },
-  async canWrite(dir) {
-    try {
-      await fsp.access(dir, constants.W_OK)
-      return true
-    } catch {
-      return false
-    }
-  },
-  async exists(path) {
-    try {
-      await fsp.access(path)
-      return true
-    } catch {
-      return false
-    }
-  },
-  async readText(path) {
-    const buffer = await fsp.readFile(path)
-    return decodeText(buffer).text
-  },
-  writeAtomic,
-  async createExclusive(path, text) {
-    try {
-      const handle = await fsp.open(path, 'wx')
-      try {
-        await handle.writeFile(text, 'utf8')
-      } finally {
-        await handle.close()
-      }
-      return true
-    } catch {
-      return false
-    }
-  },
-  async appendText(path, text) {
-    await fsp.appendFile(path, text, 'utf8')
-  },
-  async trash(path) {
-    await shell.trashItem(path)
-  },
-  async mtime(path) {
-    try {
-      return (await fsp.stat(path)).mtimeMs
-    } catch {
-      return null
-    }
   }
 }
 

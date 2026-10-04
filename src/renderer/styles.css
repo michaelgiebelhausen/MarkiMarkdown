@@ -189,9 +189,6 @@ button:focus-visible,
 .chip-places { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
 
-.file-action { display: flex; align-items: center; gap: 6px; }
-.blocked { color: var(--muted); font-size: 12px; }
-
 .btn { padding: 5px 11px; border-radius: 7px; white-space: nowrap; }
 .btn-primary { background: var(--accent); color: #fff; font-weight: 550; }
 .btn-primary:disabled { opacity: 0.45; cursor: default; }

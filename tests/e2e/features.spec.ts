@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, team, type Harness } from './helpers'
 
@@ -7,28 +7,6 @@ let h: Harness
 
 test.afterEach(async () => {
   if (h) await h.close()
-})
-
-test('undo after filing puts the original back and removes the filed copy', async () => {
-  const dirs = prepare()
-  const notePath = join(dirs.downloads, 'undo-me.md')
-  writeFileSync(notePath, '# Undo Me\n\nOriginal words.\n', 'utf8')
-  h = await launch(dirs, { openFile: notePath, settings: team(dirs) })
-
-  await expect(h.page.locator('.pm-content')).toContainText('Undo Me')
-  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
-  await h.page.getByRole('button', { name: 'File to study' }).click()
-  await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
-  expect(existsSync(join(dirs.raw, 'undo-me.md'))).toBe(true)
-  expect(existsSync(notePath)).toBe(false)
-
-  // exact, because the properties summary now shows the title "Undo Me" too
-  await h.page.getByRole('button', { name: 'Undo', exact: true }).click()
-  await expect(h.page.locator('.toast')).toContainText('Put back', { timeout: 20000 })
-  expect(existsSync(notePath)).toBe(true)
-  expect(readFileSync(notePath, 'utf8')).toContain('Original words.')
-  expect(existsSync(join(dirs.raw, 'undo-me.md'))).toBe(false)
-  expect(h.errors).toEqual([])
 })
 
 test('a plain text file offers conversion and converts on request', async () => {
@@ -88,13 +66,14 @@ test('broken front matter shows a calm message instead of crashing', async () =>
   expect(h.errors).toEqual([])
 })
 
-test('with nothing selected there is no File button, and the note name is shown', async () => {
+test('the top bar shows the note name and whether it has been archived', async () => {
   const dirs = prepare()
   const notePath = join(dirs.downloads, 'quiet.md')
   writeFileSync(notePath, '# Quiet\n', 'utf8')
   h = await launch(dirs, { openFile: notePath, settings: team(dirs) })
 
   await expect(h.page.locator('.chip-name')).toHaveText('quiet.md')
+  await expect(h.page.locator('.chip-places')).toHaveText('not archived')
   await expect(h.page.getByRole('button', { name: /^File to/ })).toHaveCount(0)
   expect(h.errors).toEqual([])
 })

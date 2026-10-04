@@ -36,7 +36,6 @@ export function buildMenu(getWindow: GetWindow, newWindow: () => BrowserWindow):
       { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send(getWindow, 'save') },
       { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => send(getWindow, 'save-as') },
       { type: 'separator' },
-      { label: 'File to...', accelerator: 'CmdOrCtrl+Shift+F', click: () => send(getWindow, 'file-to') },
       { label: 'Show in Folder', click: () => send(getWindow, 'show-in-folder') },
       { type: 'separator' },
       ...(isMac

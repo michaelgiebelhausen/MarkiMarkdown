@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { FilingPlan, FilingOutcome, PreflightOutcome, UndoOutcome } from '../main/ipc/filing'
 import type { AiProviderStatus, LedgerEntry, LoadedFile, MemberKind, Settings } from '../shared/types'
 
 type Ok<T> = { ok: true } & T
@@ -37,13 +36,6 @@ const api = {
         return ''
       }
     }
-  },
-  filing: {
-    preflight: (plan: FilingPlan): Promise<Result<{ result: PreflightOutcome }>> =>
-      ipcRenderer.invoke('filing:preflight', plan),
-    run: (plan: FilingPlan): Promise<Result<{ outcome: FilingOutcome }>> =>
-      ipcRenderer.invoke('filing:run', plan),
-    undo: (): Promise<Result<{ result: UndoOutcome }>> => ipcRenderer.invoke('filing:undo')
   },
   ledger: {
     read: (): Promise<Result<{ entries: LedgerEntry[] }>> => ipcRenderer.invoke('ledger:read'),

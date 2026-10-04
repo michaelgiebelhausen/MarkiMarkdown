@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ulid } from 'ulid'
 import { DocumentStore } from './state/document'
-import { suggestName, suggestTitle } from './state/naming'
+import { suggestTitle } from './state/naming'
 import { useSaveFlow } from './state/useSaveFlow'
 import { SaveButton, SaveLocations } from './funkybunch/SaveControls'
 import { CodePane, type CodeCommands } from './editors/CodePane'
@@ -18,18 +18,11 @@ import { TopBar } from './ui/TopBar'
 import { PaneLayout } from './layout/PaneLayout'
 import { togglePane, type PaneKey } from './layout/paneMath'
 import { ToastStack, type ToastMessage } from './ui/Toast'
-import { planFiling } from './funkybunch/selection'
-import { baseName, dirName, samePath } from '@shared/paths'
-import {
-  parseFrontMatter,
-  splitFrontMatter,
-  stampNote,
-  mergeFrontMatter
-} from '@shared/markdown/frontmatter'
+import { baseName, samePath } from '@shared/paths'
+import { parseFrontMatter, mergeFrontMatter } from '@shared/markdown/frontmatter'
 import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtToMd'
 import { tidyMarkdown } from '@shared/markdown/tidy'
-import { buildStamp } from '@shared/bunch'
-import { lastBunchFor } from '@shared/ledger'
+import { archiveCount } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
 import { applyTicks, readTicks, type TickReading, type Ticks } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
@@ -58,7 +51,6 @@ export default function App() {
   const codeCommands = useRef<CodeCommands | null>(null)
   const aiRun = useRef(0)
   const [askingLink, setAskingLink] = useState(false)
-  const filingInFlight = useRef(false)
   const toastId = useRef(1)
 
   const pushToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
@@ -179,13 +171,6 @@ export default function App() {
     onLedgerNotSaved: () => warnNotSaving('ledger'),
     pushToast
   })
-
-  const lastBunchId = useMemo(() => lastBunchFor(ledger, noteId), [ledger, noteId])
-
-  const plan = useMemo(
-    () => planFiling({ bunches, members, selectedId: activeBunch?.id ?? null, lastBunchId, missingRawPaths: missingRaw }),
-    [bunches, members, activeBunch, lastBunchId, missingRaw]
-  )
 
   /**
    * The one way the grid and the chips change the note: rewrite its YAML as one undo step.
@@ -384,180 +369,6 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [doc.dirty, doc.version, doc.paths.length, doc.isPlainText, settings?.autosave])
 
-  /* ---------------- filing ---------------- */
-
-  const runFiling = useCallback(async () => {
-    // A double click must not start a second filing over the top of the first.
-    if (filingInFlight.current) return
-    if (!plan.canFile) {
-      if (plan.blockedReason) pushToast({ text: plan.blockedReason, tone: 'warn' })
-      return
-    }
-    filingInFlight.current = true
-    try {
-      await performFiling()
-    } finally {
-      filingInFlight.current = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile])
-
-  const performFiling = useCallback(async () => {
-    const bunch = plan.bunch
-    if (!bunch || !settings) return
-
-    // Broken YAML makes stampNote a no-op, which would file a note with no id and no
-    // skills. Say so instead of filing something wrong.
-    if (!frontMatter.ok) {
-      pushToast({
-        text: 'The properties at the top of this note cannot be read, so it cannot be filed yet. Fix them on the left, or press Repair above the note.',
-        tone: 'warn',
-        duration: 10000
-      })
-      return
-    }
-
-    // A bunch made before its raw folder was chosen gets one now, and remembers it.
-    let rawPath = bunch.rawPath
-    if (rawPath.length === 0) {
-      if (settings.defaultRawPath) {
-        rawPath = settings.defaultRawPath
-      } else {
-        const picked = await window.marki.dialogs.pickFolder()
-        if (!picked.ok) return
-        rawPath = picked.path
-      }
-      const rawSave = await saveSettings({ bunches: bunches.map((b) => (b.id === bunch.id ? { ...b, rawPath } : b)) })
-      if (!rawSave.ok) pushToast({ text: rawSave.message, tone: 'warn' })
-    }
-
-    let fileName = doc.fileName
-    if (doc.paths.length === 0 || doc.isPlainText) fileName = suggestName(doc.body, fileName)
-
-    const id = noteId || ulid()
-    const created =
-      frontMatter.ok && typeof frontMatter.data.created === 'string' ? frontMatter.data.created : nowLocalIso()
-
-    const who = buildStamp(bunch, members, settings.mirrorTicksAsTags)
-    const content = stampNote(store.fullText(), {
-      id,
-      // the plain preset keeps front matter minimal; OKF wants a type on every concept
-      type: settings.frontMatterPreset === 'basic' ? undefined : 'note',
-      filed: nowLocalIso(),
-      created,
-      tags: who.tags,
-      bunch: who.bunch,
-      skills: who.skills,
-      skillPaths: who.skillPaths,
-      domains: who.domains,
-      domainPaths: who.domainPaths
-    })
-
-    // Belt and braces: if the stamp did not actually land, do not write anything.
-    const stampedFront = splitFrontMatter(content).raw
-    const stampedOk = stampedFront !== null && parseFrontMatter(stampedFront).ok
-    if (!stampedOk) {
-      pushToast({
-        text: 'The properties at the top of this note cannot be read, so it cannot be filed yet.',
-        tone: 'warn'
-      })
-      return
-    }
-
-    // A note opened from a .txt has no Markdown home yet; its .txt is what gets moved.
-    const currentPath = doc.paths[0] ?? doc.originalPath
-    const basePlan = { content, fileName, noteId: id, currentPath, raw: { name: bunch.name, path: rawPath } }
-
-    const check = await window.marki.filing.preflight(basePlan)
-    if (!check.ok) {
-      pushToast({ text: check.message, tone: 'warn' })
-      return
-    }
-    if (check.result.unavailable) {
-      pushToast({ text: check.result.unavailable, tone: 'warn' })
-      return
-    }
-
-    let conflictChoice: 'replace' | 'keepBoth' | 'cancel' = 'replace'
-    if (check.result.conflict && !check.result.conflict.sameId) {
-      const answer = await window.marki.dialogs.confirm({
-        message: `${bunch.name} already has a different note called ${fileName}.`,
-        detail: 'You can replace it, keep both, or stop here.',
-        buttons: ['Keep both', 'Replace', 'Cancel'],
-        danger: true
-      })
-      if (!answer.ok || answer.index === 2) return
-      conflictChoice = answer.index === 0 ? 'keepBoth' : 'replace'
-    }
-
-    setBusy('Filing...')
-    const result = await window.marki.filing.run({ ...basePlan, conflictChoice })
-    setBusy('')
-
-    if (!result.ok) {
-      pushToast({ text: result.message, tone: 'warn' })
-      return
-    }
-
-    const outcome = result.outcome
-    if (!outcome.ok || !outcome.writtenPath) {
-      pushToast({
-        text: outcome.failure ?? 'The note could not be filed.',
-        tone: 'warn',
-        actionLabel: 'Try again',
-        onAction: () => void runFiling()
-      })
-      return
-    }
-
-    const cameFrom = currentPath
-    const writtenPath = outcome.writtenPath
-    store.setFileName(baseName(writtenPath) || fileName)
-    store.afterFiling([writtenPath], content)
-
-    const entry: LedgerEntry = {
-      noteId: id,
-      bunchId: bunch.id,
-      skillIds: who.skillIds,
-      domainIds: who.domainIds,
-      archivedAt: nowLocalIso()
-    }
-    const appended = await window.marki.ledger.append(entry)
-    // An append that was not saved may hand back an empty or stale list (the file could
-    // not be read): keep the counts already on screen rather than wiping them.
-    if (appended.ok && appended.saved) setLedger(appended.entries)
-    else warnNotSaving('ledger')
-
-    pushToast({
-      text: outcome.notice || `Filed to ${bunch.name}.`,
-      actionLabel: 'Undo',
-      onAction: async () => {
-        // Undo goes back to before the filing, so anything typed since would go too.
-        if (store.state.dirty) {
-          const answer = await window.marki.dialogs.confirm({
-            message: 'Undo the filing?',
-            detail:
-              'You have typed something since filing. Undoing puts the note back where it came from and those newer changes are lost.',
-            buttons: ['Undo anyway', 'Keep my changes'],
-            danger: true
-          })
-          if (!answer.ok || answer.index === 1) return
-        }
-        const undone = await window.marki.filing.undo()
-        if (undone.ok) {
-          pushToast({ text: undone.result.message, tone: undone.result.ok ? undefined : 'warn' })
-          if (undone.result.ok && cameFrom) void openFile(cameFrom)
-          // A note that had never been saved anywhere has no cameFrom to reopen: the
-          // copy filing wrote is now trashed, so forget the path and make Save ask
-          // for a home again, without touching the text on screen.
-          else if (undone.result.ok) store.unfile()
-        } else {
-          pushToast({ text: undone.message, tone: 'warn' })
-        }
-      }
-    })
-  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile, saveSettings, warnNotSaving])
-
   /* ---------------- actions from the menu and the top bar ---------------- */
 
   const addProperties = useCallback(() => {
@@ -674,7 +485,6 @@ export default function App() {
         case 'tidy': return tidy()
         case 'convert': return convert()
         case 'ai-clean': return void cleanWithAi()
-        case 'file-to': return void runFiling()
         case 'toggle-pane-bunch': return togglePaneKey('bunch')
         case 'toggle-pane-raw': return togglePaneKey('raw')
         case 'toggle-pane-rendered': return togglePaneKey('rendered')
@@ -690,7 +500,7 @@ export default function App() {
         default: return
       }
     },
-    [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, runFiling, togglePaneKey, doc.fileName, doc.paths, pushToast]
+    [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, togglePaneKey, doc.fileName, doc.paths, pushToast]
   )
 
   useEffect(() => window.marki.on.menuAction(handleAction), [handleAction])
@@ -802,15 +612,6 @@ export default function App() {
     return [...tags]
   }, [doc.body])
 
-  const placeNames = useMemo(
-    () =>
-      doc.paths.map((p) => {
-        const dir = dirName(p)
-        return bunches.find((b) => b.rawPath.length > 0 && samePath(b.rawPath, dir))?.name ?? (baseName(dir) || dir)
-      }),
-    [doc.paths, bunches]
-  )
-
   if (!settings) return <div className="booting">Opening MarkiMarkdown...</div>
 
   return (
@@ -819,18 +620,12 @@ export default function App() {
         <TopBar
           fileName={doc.fileName}
           dirty={doc.dirty}
-          placeCount={doc.paths.length}
-          placeNames={placeNames}
-          fileLabel={plan.fileLabel}
-          canFile={plan.canFile}
-          blockedReason={plan.blockedReason}
-          hasPending={plan.bunch !== null}
+          archiveCount={archiveCount(ledger, noteId)}
+          filePath={doc.paths[0] ?? ''}
           panes={settings.panes}
           hiddenPanes={hiddenPanes}
           onTogglePane={togglePaneKey}
           busy={busy}
-          onFile={() => void runFiling()}
-          onClearSelection={() => activeBunch && applyBunch(activeBunch.id)}
           onMenu={handleAction}
           onCancelBusy={() => {
             aiRun.current += 1

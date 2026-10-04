@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { archiveCount, isLegacyLedger, lastBunchFor, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
+import { archiveCount, isLegacyLedger, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
 import type { LedgerEntry } from '@shared/types'
 
 const entries: LedgerEntry[] = [
@@ -27,18 +27,6 @@ describe('pairCounts', () => {
       { noteId: 'n', bunchId: 'b', skillIds: ['a', 'a'], domainIds: ['x', 'x'], archivedAt: 't' }
     ]
     expect(pairCounts(dup).get(pairKey('a', 'x'))).toBe(1)
-  })
-})
-
-describe('lastBunchFor', () => {
-  test('returns the most recent bunch a note was filed to', () => {
-    expect(lastBunchFor(entries, 'n1')).toBe('b2')
-    expect(lastBunchFor(entries, 'n2')).toBe('b1')
-  })
-
-  test('returns undefined for an unknown or empty note id', () => {
-    expect(lastBunchFor(entries, 'n9')).toBeUndefined()
-    expect(lastBunchFor(entries, '')).toBeUndefined()
   })
 })
 

@@ -5,7 +5,7 @@ import {
   mergeFrontMatter,
   MIRRORED_TAG,
   duplicateTopLevelKeys,
-  stampNote,
+  normaliseTags,
   addArchived
 } from '@shared/markdown/frontmatter'
 
@@ -268,90 +268,14 @@ describe('duplicateTopLevelKeys', () => {
   })
 })
 
-describe('stampNote', () => {
-  const base = { id: 'X', type: 'note', filed: 'n', created: 'c' }
-
-  test('adds id, type and filed to a note with no front matter', () => {
-    const out = stampNote('# Hello\n', {
-      id: '01ABC',
-      type: 'note',
-      filed: '2026-08-21T10:00:00-05:00',
-      created: '2026-08-21T09:00:00-05:00'
-    })
-    expect(out).toContain('id: 01ABC')
-    expect(out).toContain('type: note')
-    expect(out.endsWith('# Hello\n')).toBe(true)
+describe('normaliseTags', () => {
+  test('turns an Obsidian comma string into a list and strips hashes', () => {
+    expect(normaliseTags('a, #b ,a')).toEqual(['a', 'b'])
   })
 
-  test('never changes an id that is already present', () => {
-    const src = '---\nid: ORIGINAL\n---\n# Hello\n'
-    const out = stampNote(src, { ...base, id: 'NEW' })
-    expect(out).toContain('id: ORIGINAL')
-    expect(out).not.toContain('NEW')
-  })
-
-  test('never changes an existing created timestamp', () => {
-    const src = '---\ncreated: 2020-01-01\n---\n# Hello\n'
-    const out = stampNote(src, { ...base, created: '2026-08-21' })
-    expect(out).toContain('created: 2020-01-01')
-  })
-
-  test('unions incoming tags with existing ones without duplicating', () => {
-    const src = '---\ntags: [ai]\n---\nbody\n'
-    const out = stampNote(src, { ...base, tags: ['ai', 'class'] })
-    const parsed = parseFrontMatter(String(splitFrontMatter(out).raw))
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) return
-    expect(parsed.data.tags).toEqual(['ai', 'class'])
-  })
-
-  test('normalises an Obsidian comma string of tags into a list', () => {
-    const src = '---\ntags: ai, class\n---\nbody\n'
-    const out = stampNote(src, { ...base, tags: ['extra'] })
-    const parsed = parseFrontMatter(String(splitFrontMatter(out).raw))
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) return
-    expect(parsed.data.tags).toEqual(['ai', 'class', 'extra'])
-  })
-
-  test('strips a leading hash from tags', () => {
-    const out = stampNote('body\n', { ...base, tags: ['#ai'] })
-    const parsed = parseFrontMatter(String(splitFrontMatter(out).raw))
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) return
-    expect(parsed.data.tags).toEqual(['ai'])
-  })
-
-  test('writes skills as a block list and omits the key when the list is empty', () => {
-    const withSkills = stampNote('body\n', { ...base, skills: ['librarian'] })
-    expect(withSkills).toContain('skills:\n  - librarian')
-    const without = stampNote('body\n', { ...base, skills: [] })
-    expect(without).not.toContain('skills')
-  })
-
-  test('leaves the body bytes untouched', () => {
-    const body = '# Hello\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n[[wikilink]] and snake_case\n'
-    const out = stampNote(body, base)
-    expect(out.endsWith(body)).toBe(true)
-  })
-
-  test('does not damage a note whose front matter is unparseable', () => {
-    const src = '---\ntitle: Notes: week 2\n---\n# Hello\n'
-    const out = stampNote(src, base)
-    expect(out).toBe(src)
-  })
-})
-
-describe('stampNote without a type', () => {
-  test('omits the type key entirely when none is given', () => {
-    const out = stampNote('body\n', { id: 'X', filed: 'n', created: 'c' })
-    expect(out).not.toContain('type:')
-    expect(out).toContain('id: X')
-  })
-
-  test('still leaves an existing type alone', () => {
-    const out = stampNote('---\ntype: source\n---\nbody\n', { id: 'X', filed: 'n', created: 'c' })
-    expect(out).toContain('type: source')
+  test('drops empty entries', () => {
+    expect(normaliseTags(['', ' ', 'x'])).toEqual(['x'])
+    expect(normaliseTags(null)).toEqual([])
   })
 })
 
@@ -386,83 +310,6 @@ describe('splitFrontMatter must not swallow a leading divider', () => {
     // otherwise the properties panel could never offer to repair it
     const r = splitFrontMatter('---\ntitle: Notes: week 2\n---\nBody\n')
     expect(r.raw).toBe('---\ntitle: Notes: week 2\n---\n')
-  })
-})
-
-describe('stampNote with a bunch', () => {
-  const base = { id: 'X', type: 'note', filed: 'n', created: 'c' }
-  const who = {
-    bunch: 'thesis',
-    skills: ['study-coach', 'research-assistant'],
-    skillPaths: ['C:/Users/me/skills/study-coach', 'C:/Users/me/skills/research-assistant'],
-    domains: ['thesis-chapter-3'],
-    domainPaths: ['C:/Users/me/domains/thesis-chapter-3']
-  }
-
-  function data(out: string) {
-    const parsed = parseFrontMatter(String(splitFrontMatter(out).raw))
-    expect(parsed.ok).toBe(true)
-    return parsed.ok ? parsed.data : {}
-  }
-
-  test('writes five parallel keys as block lists', () => {
-    const out = stampNote('body\n', { ...base, ...who })
-    expect(out).toContain('bunch: thesis')
-    expect(out).toContain('skills:\n  - study-coach\n  - research-assistant')
-    expect(out).toContain('skill_paths:\n  - C:/Users/me/skills/study-coach')
-    expect(out).toContain('domains:\n  - thesis-chapter-3')
-    expect(out).toContain('domain_paths:\n  - C:/Users/me/domains/thesis-chapter-3')
-    const parsed = data(out)
-    expect(parsed.skills).toEqual(who.skills)
-    expect(parsed.skill_paths).toEqual(who.skillPaths)
-    expect(parsed.domains).toEqual(who.domains)
-    expect(parsed.domain_paths).toEqual(who.domainPaths)
-    expect(out.endsWith('body\n')).toBe(true)
-  })
-
-  test('refiling replaces every stamp key wholesale', () => {
-    const src =
-      '---\nbunch: old\nagents:\n  - gone\nagent_paths:\n  - /old/gone\nartifacts:\n  - stale\nartifact_paths:\n  - /old/stale\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who })
-    expect(out).not.toContain('old')
-    expect(out).not.toContain('gone')
-    expect(out).not.toContain('stale')
-    expect(out).not.toContain('agents:')
-    expect(out).not.toContain('agent_paths:')
-    expect(out).not.toContain('artifacts:')
-    expect(out).not.toContain('artifact_paths:')
-    expect(data(out).bunch).toBe('thesis')
-  })
-
-  test('an empty list removes the key instead of writing []', () => {
-    const src = '---\nbunch: old\ndomains:\n  - stale\ndomain_paths:\n  - /old/stale\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who, domains: [], domainPaths: [] })
-    expect(out).not.toContain('domains')
-    expect(out).not.toContain('domain_paths')
-    expect(out).not.toContain('[]')
-  })
-
-  test('a skill with no folder yet still gets a slot in skill_paths', () => {
-    const out = stampNote('body\n', { ...base, ...who, skills: ['a', 'b'], skillPaths: ['', '/b'] })
-    expect(data(out).skill_paths).toEqual(['', '/b'])
-  })
-
-  test('mirrored tags from the last filing are replaced, hand-written tags stay', () => {
-    const src = '---\ntags: [ai, agent/old, artifact/stale, skill/prev, domain/prev]\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who, tags: ['skill/study-coach', 'domain/thesis-chapter-3'] })
-    expect(data(out).tags).toEqual(['ai', 'skill/study-coach', 'domain/thesis-chapter-3'])
-  })
-
-  test('a stamp without a bunch leaves mirrored tags alone', () => {
-    const src = '---\ntags: [ai, agent/old]\n---\nbody\n'
-    const out = stampNote(src, { ...base, tags: ['extra'] })
-    expect(data(out).tags).toEqual(['ai', 'agent/old', 'extra'])
-  })
-
-  test('stripping the only mirrored tag with no replacement removes the tags key', () => {
-    const src = '---\ntags: [agent/old]\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who })
-    expect(out).not.toContain('tags')
   })
 })
 

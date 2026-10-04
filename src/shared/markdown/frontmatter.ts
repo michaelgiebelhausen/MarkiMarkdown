@@ -245,22 +245,6 @@ export function mergeFrontMatter(raw: string | null, patch: FrontMatterPatch, eo
   return serialise(doc, detectEol(raw))
 }
 
-export interface Stamp {
-  id: string
-  /** Omitted entirely for the plain preset, which keeps front matter minimal. */
-  type?: string
-  filed: string
-  created: string
-  tags?: string[]
-  title?: string
-  /** Set when filing to a bunch. Replaces bunch, skills, skill_paths, domains and domain_paths wholesale. */
-  bunch?: string
-  skills?: string[]
-  skillPaths?: string[]
-  domains?: string[]
-  domainPaths?: string[]
-}
-
 export function normaliseTags(value: unknown): string[] {
   if (value === null || value === undefined) return []
   const list = Array.isArray(value) ? value : String(value).split(',')
@@ -270,52 +254,6 @@ export function normaliseTags(value: unknown): string[] {
     if (tag.length > 0 && !out.includes(tag)) out.push(tag)
   }
   return out
-}
-
-/** Applies filing metadata to a whole document, preserving id, created and the body bytes. */
-export function stampNote(text: string, stamp: Stamp): string {
-  const { raw, body } = splitFrontMatter(text)
-  const existing = raw === null ? { ok: true as const, data: {} as FrontMatterData } : parseFrontMatter(raw)
-  if (!existing.ok) return text
-
-  const current = existing.data
-  const filing = stamp.bunch !== undefined
-  const before = normaliseTags(current.tags)
-  const tags = before.filter((tag) => !filing || !MIRRORED_TAG.test(tag))
-  const stripped = filing && tags.length !== before.length
-  for (const tag of normaliseTags(stamp.tags)) {
-    if (!tags.includes(tag)) tags.push(tag)
-  }
-
-  // undefined leaves a key alone, null removes it, a list writes it
-  const list = (value: string[] | undefined): string[] | null | undefined =>
-    value === undefined ? undefined : value.length > 0 ? value : null
-
-  const patch: FrontMatterPatch = {
-    id: typeof current.id === 'string' && current.id.length > 0 ? undefined : stamp.id,
-    type:
-      stamp.type === undefined || (typeof current.type === 'string' && current.type.length > 0)
-        ? undefined
-        : stamp.type,
-    created:
-      typeof current.created === 'string' && current.created.length > 0 ? undefined : stamp.created,
-    filed: stamp.filed,
-    tags: tags.length > 0 ? tags : stripped ? null : undefined,
-    bunch: stamp.bunch === undefined ? undefined : stamp.bunch.length > 0 ? stamp.bunch : null,
-    skills: list(stamp.skills),
-    skill_paths: list(stamp.skillPaths),
-    domains: list(stamp.domains),
-    domain_paths: list(stamp.domainPaths),
-    // 1.1 keys go the first time the note is filed again
-    agents: filing ? null : undefined,
-    agent_paths: filing ? null : undefined,
-    artifacts: filing ? null : undefined,
-    artifact_paths: filing ? null : undefined,
-    title: stamp.title
-  }
-
-  const merged = mergeFrontMatter(raw, patch)
-  return merged + body
 }
 
 /**

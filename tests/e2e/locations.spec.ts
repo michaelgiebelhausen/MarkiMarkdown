@@ -209,6 +209,19 @@ test('Ctrl+Shift+1 applies the first bunch, but not while a dialog is open', asy
   expect(h.errors).toEqual([])
 })
 
+test('a skill or domain whose folder is missing is flagged in the grid', async () => {
+  await openNote('# Note\n', (dirs) => ({
+    ...team(dirs),
+    members: [team(dirs).members[0], { ...team(dirs).members[1], path: join(dirs.root, 'nowhere') }]
+  }))
+  await expect(pane().locator('.board .board-warn')).toHaveCount(1)
+
+  await pane().getByRole('button', { name: 'study bunch', exact: true }).click({ button: 'right' })
+  const bunchDialog = h.page.getByRole('dialog', { name: 'Edit bunch' })
+  await expect(bunchDialog.locator('.board-warn')).toHaveCount(1)
+  expect(h.errors).toEqual([])
+})
+
 test('with nobody in the roster the pane explains itself', async () => {
   await openNote('# Note\n', { members: [], bunches: [] })
   await expect(pane().getByRole('button', { name: 'Add a skill' })).toBeVisible()

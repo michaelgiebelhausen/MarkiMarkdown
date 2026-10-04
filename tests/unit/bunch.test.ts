@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildStamp, membersOf } from '@shared/bunch'
+import { membersOf } from '@shared/bunch'
 import type { Bunch, Member } from '@shared/types'
 
 const BS = String.fromCharCode(92)
@@ -22,25 +22,5 @@ describe('membersOf', () => {
 
   test('dedupes repeated ids', () => {
     expect(membersOf({ ...bunch, skillIds: ['a1', 'a1'] }, members).skills.map((m) => m.id)).toEqual(['a1'])
-  })
-})
-
-describe('buildStamp', () => {
-  test('lists names and forward-slash paths index for index', () => {
-    const stamp = buildStamp(bunch, members, false)
-    expect(stamp.bunch).toBe('thesis-team')
-    expect(stamp.skills).toEqual(['study-coach', 'old-skill'])
-    expect(stamp.skillPaths).toEqual(['C:/me/agents/study-coach', ''])
-    expect(stamp.domains).toEqual(['thesis'])
-    expect(stamp.domainPaths).toEqual(['/me/artifacts/thesis'])
-    expect(stamp.skillIds).toEqual(['a1', 'a2'])
-    expect(stamp.domainIds).toEqual(['x1'])
-    expect(stamp.tags).toEqual([])
-  })
-
-  test('mirrors members as skill/ and domain/ tags when asked', () => {
-    expect(buildStamp(bunch, members, true).tags).toEqual([
-      'skill/study-coach', 'skill/old-skill', 'domain/thesis'
-    ])
   })
 })

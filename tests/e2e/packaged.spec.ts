@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { _electron as electron } from '@playwright/test'
-import { existsSync, writeFileSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -9,7 +9,7 @@ const EXE = process.env.MARKI_EXE ?? join(process.cwd(), 'dist', 'win-unpacked',
 
 test.skip(!existsSync(EXE), 'run "npm run pack:win" first')
 
-test('the packaged application starts, edits and files a note', async () => {
+test('the packaged application starts, edits and archives a note', async () => {
   const root = mkdtempSync(join(tmpdir(), 'marki-pkg-'))
   const userData = join(root, 'userData')
   const downloads = join(root, 'downloads')
@@ -21,6 +21,7 @@ test('the packaged application starts, edits and files a note', async () => {
     JSON.stringify({
       seenWelcome: true,
       autosave: true,
+      defaultRawPath: raw,
       members: [
         { id: 'a1', kind: 'skill', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
         { id: 'x1', kind: 'domain', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') }
@@ -54,19 +55,23 @@ test('the packaged application starts, edits and files a note', async () => {
   await page.keyboard.type(' Edited in the packaged app.')
   await expect(page.locator('.cm-content')).toContainText('Edited in the packaged app.')
 
-  // file it
-  await page.getByRole('button', { name: 'study bunch', exact: true }).click()
-  await page.getByRole('button', { name: 'File to study' }).click()
-  await expect(page.locator('.toast')).toContainText('Filed to study', { timeout: 25000 })
+  // tick and archive it
+  await page.locator('.pane-bunch').getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true }).click()
+  await page.locator('.pane-bunch').getByRole('checkbox', { name: /Archive \/ distribute/ }).check()
+  await page.locator('.pane-bunch').getByRole('button', { name: 'Save and archive', exact: true }).click()
+  await expect(page.locator('.toast')).toContainText('Saved and archived', { timeout: 25000 })
 
-  const filed = join(raw, 'packaged-note.md')
-  expect(existsSync(filed)).toBe(true)
-  const content = readFileSync(filed, 'utf8')
-  expect(content).toContain('bunch: study')
+  const copies = readdirSync(raw)
+  expect(copies).toHaveLength(1)
+  const content = readFileSync(join(raw, copies[0]), 'utf8')
+  expect(content).toContain('skills:')
+  expect(content).toContain('archived:')
   expect(content).toContain('Edited in the packaged app.')
   expect(content).toContain('| a | b |')
   // v1 wrote a folder log; v2 must not
   expect(existsSync(join(raw, 'log.md'))).toBe(false)
+  // the working copy stays put
+  expect(existsSync(notePath)).toBe(true)
 
   expect(errors).toEqual([])
 

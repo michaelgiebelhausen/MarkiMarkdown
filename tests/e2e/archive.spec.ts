@@ -55,6 +55,7 @@ test('Save and archive saves the working file and drops a dated copy in raw', as
 
   await expect(archiveBox()).not.toBeChecked()
   await expect(pane().getByRole('button', { name: 'librarian and thesis: 1 note', exact: true })).toBeVisible()
+  await expect(h.page.locator('.chip-places')).toHaveText('archived 1×')
   expect(h.errors).toEqual([])
 })
 

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, team, type Harness } from './helpers'
 
@@ -74,30 +74,6 @@ test('a note with unreadable properties cannot be given a bunch', async () => {
   await expect(h.page.getByRole('button', { name: 'study bunch', exact: true })).toBeDisabled()
   await expect(h.page.getByRole('button', { name: /^File to/ })).toHaveCount(0)
   expect(existsSync(join(dirs.raw, 'broken.md'))).toBe(false)
-  expect(h.errors).toEqual([])
-})
-
-test('the stamp written at filing survives the next save', async () => {
-  const { harness, dirs } = await openWith('# Keep the stamp\n\nBody.\n', 'stamp.md')
-  h = harness
-
-  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
-  await h.page.getByRole('button', { name: 'File to study' }).click()
-  await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
-
-  const filed = join(dirs.raw, 'stamp.md')
-  expect(readFileSync(filed, 'utf8')).toContain('bunch: study')
-
-  // keep typing; autosave must not write the unstamped text back over it
-  await h.page.locator('.cm-content').click()
-  await h.page.keyboard.press('Control+End')
-  await h.page.keyboard.type('\nA later line.')
-  await expect.poll(() => readFileSync(filed, 'utf8'), { timeout: 10000 }).toContain('A later line.')
-
-  const after = readFileSync(filed, 'utf8')
-  expect(after).toContain('bunch: study')
-  expect(after).toContain('A later line.')
-  expect(after).toMatch(/id:\s*\S+/)
   expect(h.errors).toEqual([])
 })
 

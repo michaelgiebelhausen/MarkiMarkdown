@@ -3,8 +3,7 @@ import { join } from 'node:path'
 import { promises as fsp } from 'node:fs'
 import log from 'electron-log/main'
 import { readSettings, writeSettings, saveApiKey, loadApiKey, settingsPersisting } from './ipc/settings'
-import { diskOps, diskArchiveOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
-import { preflight, runFiling, undoFiling, type FilingPlan, type UndoRecord } from './ipc/filing'
+import { diskArchiveOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
 import { writeArchiveCopy, writeNewNote, moveWorkingFile } from './ipc/archive'
 import { readLedger, appendLedger } from './ipc/ledger'
 import { proposeKind } from '../shared/memberKind'
@@ -18,8 +17,6 @@ log.transports.file.level = 'info'
 
 const isDev = !app.isPackaged
 const pendingOpen: string[] = []
-// One undo slot per window: two windows filing at once must not undo each other's work.
-const undoByWindow = new Map<number, UndoRecord>()
 
 if (readSettings().disableHardwareAcceleration) app.disableHardwareAcceleration()
 
@@ -75,10 +72,6 @@ export function createWindow(openPath?: string): BrowserWindow {
   })
 
   win.once('ready-to-show', () => win.show())
-
-  win.on('closed', () => {
-    undoByWindow.delete(win.webContents.id)
-  })
 
   win.on('close', () => {
     const [width, height] = win.getSize()
@@ -305,39 +298,6 @@ ipcMain.handle('file:save-as', async (event, suggestedName: string, content: str
     return ok({ path: result.filePath })
   } catch (error) {
     return fail(translateFsError(error, result.filePath))
-  }
-})
-
-ipcMain.handle('filing:preflight', async (_e, plan: FilingPlan) => {
-  try {
-    return ok({ result: await preflight(diskOps, plan) })
-  } catch (error) {
-    return fail(translateFsError(error, 'that raw folder'))
-  }
-})
-
-ipcMain.handle('filing:run', async (event, plan: FilingPlan) => {
-  try {
-    const outcome = await runFiling(diskOps, plan)
-    // A failed filing must not erase the undo record of whatever filing succeeded
-    // before it - unless this attempt itself displaced a note into the trash, which
-    // needs its own undo to bring that note back.
-    if (outcome.ok || outcome.undo.replaced) undoByWindow.set(event.sender.id, outcome.undo)
-    return { ok: true as const, outcome }
-  } catch (error) {
-    return fail(translateFsError(error, 'that raw folder'))
-  }
-})
-
-ipcMain.handle('filing:undo', async (event) => {
-  const record = undoByWindow.get(event.sender.id)
-  if (!record) return fail('There is nothing to put back.')
-  try {
-    const result = await undoFiling(diskOps, record)
-    undoByWindow.delete(event.sender.id)
-    return { ok: true as const, result }
-  } catch (error) {
-    return fail(translateFsError(error, 'those files'))
   }
 })
 

@@ -19,15 +19,6 @@ export function pairCounts(entries: LedgerEntry[]): Map<string, number> {
   return counts
 }
 
-/** The bunch a note was most recently filed to, if it ever was. */
-export function lastBunchFor(entries: LedgerEntry[], noteId: string): string | undefined {
-  if (noteId.length === 0) return undefined
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].noteId === noteId) return entries[i].bunchId
-  }
-  return undefined
-}
-
 function idList(primary: unknown, legacy: unknown): string[] | null {
   const list = primary !== undefined ? primary : legacy
   return Array.isArray(list) && list.every((v) => typeof v === 'string') ? (list as string[]) : null

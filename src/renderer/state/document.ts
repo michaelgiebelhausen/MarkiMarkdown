@@ -241,11 +241,7 @@ export class DocumentStore {
     this.emit()
   }
 
-  /**
-   * Filing writes a stamped copy (id, skills, filed) to disk. The editor has to take
-   * that same text on, or the next autosave would write the unstamped version back
-   * over it and the note would quietly lose the very details a second brain looks for.
-   */
+  /** The note now lives at these paths (after a first save or a move). If text is given, the editor takes it on as saved. */
   afterFiling(paths: string[], stampedText?: string): void {
     const split = stampedText === undefined ? null : splitFrontMatter(stampedText)
     this.state = {
@@ -259,16 +255,6 @@ export class DocumentStore {
       version: this.state.version + 1
     }
     this.savedText = this.fullText()
-    this.emit()
-  }
-
-  /**
-   * Undoing a filing can remove the only copy this note ever had on disk (a note
-   * that was never saved anywhere before it was filed). The text on screen does not
-   * change, but it no longer has a home, so Save has to ask for one again.
-   */
-  unfile(): void {
-    this.state = { ...this.state, paths: [], originalPath: undefined }
     this.emit()
   }
 }
