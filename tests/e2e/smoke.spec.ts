@@ -91,6 +91,70 @@ test('the pane selector shows and hides panes and remembers the choice', async (
   expect(h.errors).toEqual([])
 })
 
+/** Sends a View menu action the way the menu's accelerator would. */
+async function menuAction(harness: Harness, ...actions: string[]) {
+  await harness.app.evaluate(({ BrowserWindow }, list) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    for (const action of list) win.webContents.send('menu:action', action)
+  }, actions)
+}
+
+test('two pane toggles sent back to back both stick', async () => {
+  const dirs = prepare()
+  h = await launch(dirs)
+  await expect(h.page.locator('.pane-bunch')).toBeVisible()
+
+  await menuAction(h, 'toggle-pane-bunch', 'toggle-pane-raw')
+
+  await expect(h.page.locator('.pane-bunch')).toHaveCount(0)
+  await expect(h.page.locator('.pane-code')).toHaveCount(0)
+  await expect(h.page.locator('.pane-rendered')).toBeVisible()
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).panes)
+    .toEqual({ bunch: false, raw: false, rendered: true })
+  expect(h.errors).toEqual([])
+})
+
+test('a divider drag ends when a pane is toggled in the middle of it', async () => {
+  const dirs = prepare()
+  h = await launch(dirs)
+  const grid = h.page.locator('.panes')
+  const columns = () => grid.evaluate((el) => (el as HTMLElement).style.gridTemplateColumns)
+  await expect(h.page.locator('.pane-divider')).toHaveCount(2)
+  // DEFAULT_SETTINGS.paneWidths, which the first write puts on disk
+  const initialWidths = JSON.stringify([0.34, 0.33, 0.33])
+
+  const box = await h.page.locator('.pane-divider').nth(1).boundingBox()
+  expect(box).not.toBeNull()
+  const x = box!.x + box!.width / 2
+  const y = box!.y + box!.height / 2
+  const before = await columns()
+  await h.page.mouse.move(x, y)
+  await h.page.mouse.down()
+  await h.page.mouse.move(x - 60, y, { steps: 4 })
+  await expect.poll(columns).not.toBe(before)
+
+  await menuAction(h, 'toggle-pane-bunch')
+  await expect(h.page.locator('.pane-bunch')).toHaveCount(0)
+  // Ending the drag saves the widths it reached; let that save land before comparing.
+  const saved = () => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8'))
+  await expect.poll(() => saved().panes).toEqual({ bunch: false, raw: true, rendered: true })
+  await expect.poll(() => JSON.stringify(saved().paneWidths)).not.toBe(initialWidths)
+  await h.page.waitForTimeout(300)
+  const afterToggle = await columns()
+
+  // The drag is over: moving the held mouse further changes nothing.
+  await h.page.mouse.move(x - 160, y, { steps: 4 })
+  expect(await columns()).toBe(afterToggle)
+  await h.page.mouse.up()
+  expect(await columns()).toBe(afterToggle)
+
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).panes)
+    .toEqual({ bunch: false, raw: true, rendered: true })
+  expect(h.errors).toEqual([])
+})
+
 test('a checklist item keeps its box and its words on one line', async () => {
   h = await launch(prepare())
   await h.page.locator('.cm-content').click()

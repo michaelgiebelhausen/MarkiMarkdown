@@ -82,19 +82,26 @@ export default function App() {
     return result
   }, [])
 
-  // Optimistic, so the checkbox flips in the same frame as the click.
-  const togglePaneKey = useCallback(
-    (key: PaneKey) => {
-      if (!settings) return
-      const panes = togglePane(settings.panes, key)
-      if (panes === settings.panes) return
-      setSettings({ ...settings, panes })
-      void window.marki.settings.write({ panes })
-    },
-    [settings]
-  )
+  /** The newest settings, even before React re-renders, so quick toggles build on each other. */
+  const settingsRef = useRef<Settings | null>(null)
+  settingsRef.current = settings
 
-  const members =settings?.members ?? []
+  // Optimistic, so the checkbox flips in the same frame as the click.
+  const togglePaneKey = useCallback((key: PaneKey) => {
+    const current = settingsRef.current
+    if (!current) return
+    const panes = togglePane(current.panes, key)
+    if (panes === current.panes) return
+    const next = { ...current, panes }
+    settingsRef.current = next
+    setSettings(next)
+    // The reply carries every write so far, so the last one to land is always complete.
+    void window.marki.settings.write({ panes }).then((result) => {
+      if (result.ok) setSettings(result.settings)
+    })
+  }, [])
+
+  const members = settings?.members ?? []
   const bunches = settings?.bunches ?? []
 
   /* ---------------- note identity ---------------- */

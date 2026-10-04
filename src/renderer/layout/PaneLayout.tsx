@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { PaneSet } from '@shared/types'
-import { dragDivider, layoutPanes, type PaneKey } from './paneMath'
+import { dragDivider, layoutPanes, PANE_ORDER, type PaneKey } from './paneMath'
 
 interface Props {
   panes: PaneSet
@@ -15,10 +15,20 @@ interface Props {
 /** Before the first measurement there is no width yet; assume a typical window so nothing hides. */
 const FALLBACK_WIDTH = 1200
 
+/** Matches the 6px divider columns in the grid template below. */
+const DIVIDER_WIDTH = 6
+
+/** The width left for panes once the dividers between `count` panes are taken out. */
+function paneRoom(width: number, count: number): number {
+  return Math.max(0, width - DIVIDER_WIDTH * Math.max(0, count - 1))
+}
+
 export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const [total, setTotal] = useState(0)
   const [draft, setDraft] = useState<[number, number, number] | null>(null)
+  /** Ends the drag in progress, if any. */
+  const dragCleanup = useRef<(() => void) | null>(null)
 
   useLayoutEffect(() => {
     const el = host.current
@@ -31,7 +41,17 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
   }, [])
 
   const width = total || FALLBACK_WIDTH
-  const layout = layoutPanes(panes, draft ?? widths, width)
+  const ticked = PANE_ORDER.filter((k) => panes[k]).length
+  let room = paneRoom(width, ticked)
+  let layout = layoutPanes(panes, draft ?? widths, room)
+  if (layout.shown.length < ticked) {
+    room = paneRoom(width, layout.shown.length)
+    layout = layoutPanes(panes, draft ?? widths, room)
+  }
+
+  /** The live pane room, so a window resize during a drag is measured against the new width. */
+  const roomRef = useRef(room)
+  roomRef.current = room
 
   const hiddenKey = layout.hidden.join(',')
   useEffect(() => {
@@ -39,31 +59,50 @@ export function PaneLayout({ panes, widths, onWidths, onHiddenChange, render }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hiddenKey])
 
+  // A pane appearing or disappearing mid-drag (Ctrl+1/2/3) changes what the divider means: stop.
+  const shownKey = layout.shown.join(',')
+  useEffect(() => {
+    dragCleanup.current?.()
+  }, [shownKey])
+
+  useEffect(() => () => dragCleanup.current?.(), [])
+
   const startDrag = (index: number) => (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const target = event.currentTarget
+    dragCleanup.current?.()
     const startX = event.clientX
     const startLayout = layout
     const base = draft ?? widths
     let latest = base
-    target.setPointerCapture(event.pointerId)
+    let done = false
+    // Capture keeps events flowing over iframes and editors; captured events still bubble to window.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // The pointer may already be gone; the window listeners still end the drag.
+    }
+    // Listen on the window: the divider itself can unmount mid-drag when a pane is toggled.
     const move = (e: PointerEvent) => {
-      latest = dragDivider(base, startLayout, index, e.clientX - startX, width)
+      latest = dragDivider(base, startLayout, index, e.clientX - startX, roomRef.current)
       setDraft(latest)
     }
     const end = () => {
-      target.removeEventListener('pointermove', move)
-      target.removeEventListener('pointerup', end)
-      target.removeEventListener('pointercancel', end)
+      if (done) return
+      done = true
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      if (dragCleanup.current === end) dragCleanup.current = null
       setDraft(null)
       if (latest !== base) onWidths(latest)
     }
-    target.addEventListener('pointermove', move)
-    target.addEventListener('pointerup', end)
-    target.addEventListener('pointercancel', end)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    dragCleanup.current = end
   }
 
-  const columns = layout.fractions.map((f) => `minmax(0, ${f}fr)`).join(' 6px ')
+  const columns = layout.fractions.map((f) => `minmax(0, ${f}fr)`).join(` ${DIVIDER_WIDTH}px `)
 
   return (
     <div className="panes" ref={host} style={{ gridTemplateColumns: columns }}>
