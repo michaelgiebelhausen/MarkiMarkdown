@@ -365,3 +365,46 @@ describe('telling one opened note from the next', () => {
     expect(store.loadGeneration).not.toBe(afterLoad)
   })
 })
+
+describe('saying when a change came from undo or redo', () => {
+  beforeEach(() => store.load(loaded('one\n')))
+
+  test('undo and redo each move the history step, and the snapshot carries it', () => {
+    store.setBody('two\n', null)
+    store.commitUndoGroup()
+    const before = store.historyStep
+    expect(store.getSnapshot().historyStep).toBe(before)
+
+    store.undo()
+    expect(store.historyStep).toBe(before + 1)
+    expect(store.getSnapshot().historyStep).toBe(before + 1)
+
+    store.redo()
+    expect(store.historyStep).toBe(before + 2)
+    expect(store.getSnapshot().historyStep).toBe(before + 2)
+  })
+
+  test('an undo or redo with nothing to step to leaves it alone', () => {
+    const before = store.historyStep
+    store.undo()
+    store.redo()
+    expect(store.historyStep).toBe(before)
+  })
+
+  test('edits, saving, filing, opening and starting afresh leave it alone', () => {
+    store.setBody('two\n', null)
+    store.commitUndoGroup()
+    store.undo()
+    const before = store.historyStep
+
+    store.setFullText('---\ntitle: X\n---\nthree\n', null)
+    store.setBody('four\n', null)
+    store.setFrontMatter(null, null)
+    store.markSaved()
+    store.afterFiling(['C:/sb/notes.md'], { stampedText: '---\nid: 1\n---\nfour\n' })
+    store.load(loaded('five\n'))
+    store.reset()
+    expect(store.historyStep).toBe(before)
+    expect(store.getSnapshot().historyStep).toBe(before)
+  })
+})

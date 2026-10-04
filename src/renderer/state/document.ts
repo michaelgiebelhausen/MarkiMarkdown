@@ -26,6 +26,8 @@ export interface DocState {
 
 interface Snapshot extends DocState {
   fullText: string
+  /** See DocumentStore.historyStep. */
+  historyStep: number
 }
 
 const EMPTY: DocState = {
@@ -54,12 +56,13 @@ export class DocumentStore {
   state: DocState = { ...EMPTY }
 
   private listeners = new Set<() => void>()
-  private snapshot: Snapshot = { ...EMPTY, fullText: '' }
+  private snapshot: Snapshot = { ...EMPTY, fullText: '', historyStep: 0 }
   private past: DocState[] = []
   private future: DocState[] = []
   private pending: DocState | null = null
   private savedText = ''
   private generation = 0
+  private steps = 0
 
   constructor() {
     this.refreshSnapshot()
@@ -75,7 +78,7 @@ export class DocumentStore {
   getSnapshot = (): Snapshot => this.snapshot
 
   private refreshSnapshot(): void {
-    this.snapshot = { ...this.state, fullText: this.fullText() }
+    this.snapshot = { ...this.state, fullText: this.fullText(), historyStep: this.steps }
   }
 
   private emit(): void {
@@ -108,6 +111,15 @@ export class DocumentStore {
    */
   get loadGeneration(): number {
     return this.generation
+  }
+
+  /**
+   * Goes up by one each time an undo or redo actually changes the text, and at no other
+   * time. A pane that sees it move knows the text it was just given came (at least partly)
+   * from stepping through history, so it may put back text the student cannot see.
+   */
+  get historyStep(): number {
+    return this.steps
   }
 
   /* ---------------- loading ---------------- */
@@ -240,6 +252,7 @@ export class DocumentStore {
    */
   private restoreText(from: DocState): void {
     const { frontMatterRaw, body } = from
+    if (frontMatterRaw !== this.state.frontMatterRaw || body !== this.state.body) this.steps += 1
     this.state = {
       ...this.state,
       frontMatterRaw,

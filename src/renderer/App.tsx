@@ -764,6 +764,7 @@ export default function App() {
                   <CodePane
                     store={store}
                     text={doc.fullText}
+                    historyStep={doc.historyStep}
                     sync={sync}
                     onFocusOwner={() => store.setOwner('code')}
                     registerCommands={(api) => {

@@ -61,6 +61,8 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
         top (folders that do a kind of work, like a CLAUDE.md and its skills) and your <strong>domain folders</strong>{' '}
         down the side (folders that gather everything about one subject). Tick the ones this note belongs to. The
         ticks are written straight into the note&apos;s YAML. Press <strong>View YAML</strong> in the raw pane to watch them appear.
+        While the YAML is folded, Select All in the raw pane selects the note&apos;s body only; press{' '}
+        <strong>View YAML</strong> first to select everything.
       </p>
       <p>
         <strong>Save</strong> saves the working version where it lives. Tick <strong>Archive / distribute</strong>{' '}

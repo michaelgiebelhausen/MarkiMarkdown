@@ -198,6 +198,11 @@ export function yamlFold(
    * The changes that may pass but still touch the fold ask for it to open: an undo or redo
    * that puts back hidden text, and a cursor moved into it (Ctrl+Home, find, arrow keys).
    * Extenders run after the filter, on every transaction.
+   *
+   * CodeMirror may run an extender twice on one transaction: when a filter (like the guard
+   * above) hands back a new spec, that spec is resolved with the extenders, and the result
+   * is then extended again. So this must stay idempotent: asking to open twice is the same
+   * as asking once, and it must never add anything that would differ the second time.
    */
   const askToOpen = EditorState.transactionExtender.of((tr) => {
     if (tr.annotation(fromStore) === 'echo') return null

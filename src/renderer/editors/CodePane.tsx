@@ -131,6 +131,8 @@ export interface CodeCommands {
 interface Props {
   store: DocumentStore
   text: string
+  /** The store's historyStep for this text: it moves only when undo or redo changed it. */
+  historyStep: number
   sync: SyncController
   onFocusOwner: () => void
   registerCommands: (commands: CodeCommands | null) => void
@@ -138,7 +140,16 @@ interface Props {
   onYamlOpen: () => void
 }
 
-export function CodePane({ store, text, sync, onFocusOwner, registerCommands, yaml, onYamlOpen }: Props) {
+export function CodePane({
+  store,
+  text,
+  historyStep,
+  sync,
+  onFocusOwner,
+  registerCommands,
+  yaml,
+  onYamlOpen
+}: Props) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const editable = useRef(new Compartment())
@@ -279,25 +290,25 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
   }, [])
 
   /**
-   * Where the store's undo history stood at the last text this pane was given. The store's
-   * undo and redo are the only changes that leave (or used up) something to redo, and the
-   * only store changes that put back text the student may not see; anything else from the
-   * store (a tick, the other pane, a file opening, an id stamped on save) clears the redo
-   * list or loads a new note. A tick right after an undo is also counted as a step through
-   * history: that only opens the YAML, which is always safe.
+   * The store's historyStep at the last text this pane followed. The store's undo and redo
+   * are the only store changes that may put back text the student cannot see, and the store
+   * moves the step exactly when one of them changed the text. So text that arrives with a
+   * new step came through history, even when React handed it over together with another
+   * write; anything else (a tick, the other pane, a file opening, an id stamped on save) is
+   * a plain echo.
    */
-  const storeHistory = useRef({ generation: store.loadGeneration, canRedo: store.canRedo() })
+  const seenHistoryStep = useRef(historyStep)
 
   // Follow the other pane without disturbing the cursor: replace only what differs.
   useEffect(() => {
     const current = view.current
     if (!current) return
-    const before = storeHistory.current
-    const now = { generation: store.loadGeneration, canRedo: store.canRedo() }
-    storeHistory.current = now
+    const throughHistory = historyStep !== seenHistoryStep.current
     const existing = current.state.doc.toString()
-    if (existing === text) return
-    const throughHistory = now.generation === before.generation && (now.canRedo || before.canRedo)
+    if (existing === text) {
+      seenHistoryStep.current = historyStep
+      return
+    }
     let start = 0
     const max = Math.min(existing.length, text.length)
     while (start < max && existing[start] === text[start]) start += 1
@@ -312,8 +323,9 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
       scrollIntoView: false,
       annotations: fromStore.of(throughHistory ? 'history' : 'echo')
     })
+    seenHistoryStep.current = historyStep
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text])
+  }, [text, historyStep])
 
   // Apply the fold when it changes. yaml is compared field by field: App rebuilds the
   // object on every tick reading.

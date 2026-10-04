@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { EditorState, type Transaction } from '@codemirror/state'
+import { EditorState, type StateCommand, type Transaction } from '@codemirror/state'
+import { history, redo, undo } from '@codemirror/commands'
 import {
   foldRange,
   fromStore,
   hiddenRange,
   requestOpen,
+  setYamlFold,
   yamlFold,
   yamlFoldConfig,
   type YamlFoldState
@@ -105,11 +107,34 @@ describe('the fold guard', () => {
   })
 
   it('lets undo and redo put back hidden text, and asks to open', () => {
-    for (const userEvent of ['undo', 'redo']) {
-      const tr = stateFor(NOTE).update({ changes: { from: 4, to: 10, insert: 'title' }, userEvent })
-      expect(tr.docChanged).toBe(true)
-      expect(asksToOpen(tr)).toBe(true)
+    // Edit the YAML while it is open, then fold it, so the history holds a hidden change.
+    let state = EditorState.create({
+      doc: NOTE,
+      extensions: [history(), yamlFold(() => undefined, { ...FOLDED, folded: false })]
+    })
+    state = state.update({ changes: { from: 4, to: 10, insert: 'title' }, userEvent: 'input.type' }).state
+    const edited = state.doc.toString()
+    expect(edited).toBe(`---\ntitle: [librarian]\ntags: [a]\n---\n# Note\n\nBody.\n`)
+    state = state.update({ effects: setYamlFold.of(FOLDED) }).state
+    expect(hiddenRange(state)).not.toBeNull()
+
+    const step = (command: StateCommand): Transaction => {
+      const sent: Transaction[] = []
+      expect(command({ state, dispatch: (tr) => sent.push(tr) })).toBe(true)
+      expect(sent).toHaveLength(1)
+      return sent[0] as Transaction
     }
+
+    const undone = step(undo)
+    expect(undone.state.doc.toString()).toBe(NOTE)
+    expect(asksToOpen(undone)).toBe(true)
+
+    // Nobody acts on the request here, so the YAML is still folded for the redo.
+    state = undone.state
+    expect(hiddenRange(state)).not.toBeNull()
+    const redone = step(redo)
+    expect(redone.state.doc.toString()).toBe(edited)
+    expect(asksToOpen(redone)).toBe(true)
   })
 
   it("lets a step through the store's history pass, and asks to open", () => {
