@@ -17,8 +17,8 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
     >
       <h3 className="section-head">The two sides</h3>
       <p>
-        The left side is the real Markdown, the code your note is made of. The right side is the same note,
-        tidied up. Type on either side and the other keeps up.
+        The middle pane is the real Markdown, the code your note is made of. The right pane is the same note,
+        tidied up. Type in either one and the other keeps up. The checkboxes at the top show or hide each pane.
       </p>
 
       <h3 className="section-head">Markdown in 60 seconds</h3>
@@ -57,17 +57,19 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
 
       <h3 className="section-head">The Funky Bunch</h3>
       <p>
-        Down the left edge are your <strong>bunches</strong>. A bunch is a group of{' '}
-        <strong>skills</strong> (folders that do a kind of work) and <strong>domains</strong> (folders that
-        gather one subject), like a group chat. Click the bunch this note is for, then press File.
+        The left pane is the <strong>Funky Bunch</strong>. Its grid has your <strong>skill folders</strong> across the
+        top (folders that do a kind of work, like a CLAUDE.md and its skills) and your <strong>domain folders</strong>{' '}
+        down the side (folders that gather everything about one subject). Tick the ones this note belongs to. The
+        ticks are written straight into the note&apos;s YAML, so you can watch them appear in the raw pane.
       </p>
       <p>
-        Filing writes the note once, into that bunch&apos;s <strong>raw</strong> folder, with the skills and
-        domains written into the note&apos;s properties so your second brain knows who it is for.
+        <strong>Save</strong> saves the working version where it lives. Tick <strong>Archive / distribute</strong>{' '}
+        when this version is a milestone, and Save also drops a dated copy into your second brain&apos;s{' '}
+        <strong>raw</strong> folder. Earlier copies are never overwritten.
       </p>
       <p className="muted">
-        The team board (the grid button on the strip) shows your skills across the top and your domains down the
-        side, with how many notes have gone to each pair.
+        A bunch is a saved set of ticks plus a raw folder. Click one to apply it; right-click to edit it. The numbers
+        in the grid count how many archive copies went to each pair.
       </p>
 
       <h3 className="section-head">Handy keys</h3>

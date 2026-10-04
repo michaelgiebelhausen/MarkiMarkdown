@@ -1,6 +1,6 @@
 # MarkiMarkdown
 
-A free Markdown editor that shows the raw code on the left and the clean, readable text on the right, both
+A free Markdown editor that shows the raw code in the middle and the clean, readable text on the right, both
 editable, so you can learn Markdown while you write.
 
 Type in either side. The other side keeps up as you go. Nothing to memorise on day one.
@@ -8,7 +8,7 @@ Type in either side. The other side keeps up as you go. Nothing to memorise on d
 ## Why this exists
 
 More and more students keep a "second brain": a set of folders full of plain notes that an AI agent can read
-later. You save a chat from NotebookLM or ChatGPT, tidy it up, and file it where it belongs.
+later. You save a chat from NotebookLM or ChatGPT, tidy it up, and put it where it belongs.
 
 Those notes come out as Markdown, and Markdown is just text with a few small symbols in it. Most editors either
 hide the symbols completely or show nothing but symbols. MarkiMarkdown shows you both at once, so the symbols
@@ -18,47 +18,46 @@ MarkiMarkdown is free, it is yours, and your notes stay on your own computer as 
 
 ## The Funky Bunch
 
-The Funky Bunch is the strip down the left side of the window. It is built on one idea: the folders in your
-coworking space come in two kinds.
+The window has three panes, and the checkboxes at the top show or hide each one: the **Funky Bunch** on the
+left, the **raw Markdown** in the middle, and the **rendered** note on the right.
 
-- **Agents** are folders that do work. They hold skills, a `CLAUDE.md`, instructions.
-- **Artifacts** are folders that hold what the work produces: a thesis chapter, a startup plan, a band site.
+The Funky Bunch is built on one idea: the folders an AI works from come in two kinds.
 
-A **bunch** is a group of agents and artifacts, like a group chat on your phone. Each bunch has a **raw**
-folder, the inbox of your second brain.
+- **Skill folders** do a kind of work. They hold skills, a `CLAUDE.md`, instructions. A skill cuts across many
+  deliverables.
+- **Domain folders** gather everything about one subject: a course, a thesis, a band.
 
-Here is how you use it:
-
-1. Open the team board (the grid button on the strip) and add an agent and an artifact.
-2. Make a bunch: give it a name, a raw folder, and tick the agents and artifacts in it.
-3. Open or write a note, click the bunch it is for, and press **File**.
-
-When you click File, MarkiMarkdown writes the note **once**, into that bunch's raw folder, and stamps its
-front matter with who it is for:
+The pane's grid has skills across the top and domains down the side. Tick the ones a note belongs to and they
+are written into its YAML straight away:
 
 ```yaml
-bunch: thesis
-agents:
+skills:
   - study-coach
-agent_paths:
-  - C:/Users/me/agents/study-coach
-artifacts:
+skill_paths:
+  - C:/Users/me/skills/study-coach
+domains:
   - thesis-chapter-3
-artifact_paths:
-  - C:/Users/me/artifacts/thesis-chapter-3
+domain_paths:
+  - C:/Users/me/domains/thesis-chapter-3
+tags: [skill/study-coach, domain/thesis-chapter-3]
 ```
 
-Names and paths line up index for index, so a second-brain script can grep them. The agents and artifacts
-are also mirrored as tags (`agent/study-coach`, `artifact/thesis-chapter-3`) for Obsidian users. Your
-second brain reads the raw folder and does the routing. MarkiMarkdown never writes into agent or artifact
-folders itself.
+Names and paths line up index for index, so a second-brain script can grep them. The tags are for Obsidian
+users and can be turned off in Settings.
 
-The team board shows agents across the top and artifacts down the side, with a count in each square of how
-many notes have gone to that pair. Click a square to make or open the bunch that pairs them.
+**Save** saves the working version where it lives. Tick **Archive / distribute this version** when a version is
+a milestone, and Save also writes a dated copy (`essay-2026-10-04.md`, then `-2`, `-3`…) into your second
+brain's **raw** folder, with an `archived:` timestamp. Copies are never overwritten. Your second brain reads the
+raw folder and does the routing; MarkiMarkdown never writes into skill or domain folders.
+
+A **bunch** is a saved set of ticks plus a raw folder, like a group chat. Click one to apply it.
+
+Upgrading from 1.1: notes that say `agents:` and `artifacts:` open with the right boxes ticked and switch to
+`skills:` and `domains:` the first time you tick something. Notes are never rewritten just by opening them.
 
 ## What it does
 
-- **Side-by-side editing with live sync.** Raw Markdown on the left, the finished-looking text on the right.
+- **Side-by-side editing with live sync.** Raw Markdown in the middle, the finished-looking text on the right.
   Type in either one. Whichever side you are working in, the block you are in is tinted on **both** sides, and
   scrolling one pane brings the other along, so it is always obvious which code makes which words.
 - **A formatting bubble.** Select some text on the right and a small bar appears: bold, italic, code, link, and

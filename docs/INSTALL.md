@@ -11,8 +11,8 @@ Go to the project's **Releases** page and look at the list of files at the botto
 
 | You are on | Download this | What it is |
 | --- | --- | --- |
-| Windows | `MarkiMarkdown-1.1.0-Windows-Setup.exe` | The normal installer. Pick this one. |
-| Windows, no permission to install | `MarkiMarkdown-1.1.0-Windows-Portable.exe` | Runs straight from the file. No install. |
+| Windows | `MarkiMarkdown-1.2.0-Windows-Setup.exe` | The normal installer. Pick this one. |
+| Windows, no permission to install | `MarkiMarkdown-1.2.0-Windows-Portable.exe` | Runs straight from the file. No install. |
 
 A Mac download is not available yet. It will appear in this table when it is.
 
@@ -23,7 +23,7 @@ You will also see files ending in `.blockmap`, a file called `latest.yml`, and t
 
 ## Windows
 
-1. Download **`MarkiMarkdown-1.1.0-Windows-Setup.exe`**.
+1. Download **`MarkiMarkdown-1.2.0-Windows-Setup.exe`**.
 2. Open your **Downloads** folder and double-click the file.
 3. Windows will probably show a blue box saying **"Windows protected your PC"**. This is expected. Keep reading.
    If instead you see a plain message saying **"An Application Control policy has blocked this file"**, with no
@@ -65,7 +65,7 @@ whole problem does not apply to you.
 
 ### The Portable version
 
-`MarkiMarkdown-1.1.0-Windows-Portable.exe` is the whole app in a single file. Double-click it and it just runs. There is no
+`MarkiMarkdown-1.2.0-Windows-Portable.exe` is the whole app in a single file. Double-click it and it just runs. There is no
 installer and nothing is added to your Start menu. It is a good choice if you are not allowed to install
 software, or if you want to keep the app on a USB stick.
 
@@ -103,26 +103,26 @@ to find next time.
 
 ## Your first run
 
-The first time MarkiMarkdown opens you will see a **Welcome** note already loaded, with the raw Markdown on the
-left and the tidy version on the right. Type in either side and watch the other one change. Nothing you do to
-this note can hurt anything.
+The first time MarkiMarkdown opens you will see a **Welcome** note already loaded. The window has three panes,
+and the three checkboxes at the top show or hide each one: the **Funky Bunch** on the left, the **raw Markdown**
+in the middle, and the tidy **rendered** version on the right. Type in the middle or the right and watch the
+other one change. Nothing you do to this note can hurt anything.
 
-Down the left is the **Funky Bunch**. It starts empty, so let's set it up. The idea is that the folders you
-work with come in two kinds: **agents** are folders that do work (they hold skills and instructions for an AI),
-and **artifacts** are folders that hold what the work produces. A **bunch** is a group of agents and artifacts,
-like a group chat, with a **raw** folder where filed notes land.
+On the left is the **Funky Bunch**. It starts empty, so let's set it up. The idea is that the folders you work
+with come in two kinds: **skill folders** do a kind of work (they hold skills and instructions for an AI), and
+**domain folders** gather everything about one subject.
 
-1. Click the grid button on the strip to open the **team board**, then click **Add an artifact**.
-2. Pick a folder on your computer. If you already keep notes somewhere, pick that. If not, make a new folder
-   called `Notes` first, in Documents.
-3. Give it a short name and pick an emoji for it. The emoji is just so you can spot it quickly. Click **Save**.
-4. If you have a folder that an AI agent works from, click **Add an agent** and pick that too. You can skip this
-   for now.
-5. Close the board, click the **+** on the strip to **make a bunch**, give it a name, choose a raw folder (the
-   **Create Documents / Second Brain / raw for me** button makes one), tick your artifact, and click **Save**.
+1. In the Funky Bunch pane, click **Add a domain**.
+2. Pick a folder on your computer. If you already keep notes about a subject somewhere, pick that. If not, make a
+   new folder in Documents first.
+3. Give it a short name and pick an emoji for it. Click **Save**.
+4. If you have a folder that an AI agent works from, click **Add a skill** and pick that too.
+5. Click a square in the grid. Watch the top of the note in the middle pane: the skill and domain you ticked
+   appear in its YAML.
+6. Under **Archive copy goes to raw folder**, choose your second brain's raw folder.
+7. Tick **Archive / distribute this version** and press **Save and archive**.
 
-That bunch now appears in the strip. To try filing, click the bunch so it lights up, then click **File**. Your
-Welcome note is moved into the bunch's raw folder, with the agents and artifacts written into its properties.
+Your note stays where it is, and a dated copy lands in the raw folder, tagged with what you ticked.
 
 ## If something goes wrong
 
@@ -145,17 +145,11 @@ If you would rather look at the full log file yourself, or send it on:
 
 ## Questions people ask
 
-### Where did my file go after I clicked File?
+### Where did my archive copy go?
 
-It went into the raw folder of the bunch you chose. That is what the File button does: it writes the note once
-into that folder, stamps it with the agents and artifacts in the bunch, and tidies the original away from
-wherever it was sitting, usually Downloads.
-
-To find it, open that raw folder. The note is a normal file, sitting right there. The strip also shows a dot on
-the bunch a note was last filed to.
-
-If that is not what you wanted, click **Undo** in the little message that pops up at the bottom of the window
-straight after filing. That puts everything back the way it was.
+Into the raw folder shown under **Archive copy goes to raw folder**, named after your note with the date added,
+like `essay-2026-10-04.md`. A second archive on the same day becomes `essay-2026-10-04-2.md`; nothing is ever
+overwritten. The working version stays where it was. The top bar says how many times a note has been archived.
 
 ### Why is the AI button asking me to set something up?
 
@@ -175,11 +169,11 @@ Two things worth saying plainly:
 
 Yes, and it works nicely.
 
-Point a bunch's raw folder at a folder inside your Obsidian vault. Every note MarkiMarkdown files is an
+Point your raw folder at a folder inside your Obsidian vault. Every copy MarkiMarkdown archives is an
 ordinary Markdown file with ordinary front matter, so Obsidian picks it up as soon as it appears. Nothing is in
 a special format and nothing is locked away.
 
-The agents and artifacts also show up as Obsidian tags, as `agent/name` and `artifact/name`, which Obsidian can
+The skills and domains also show up as Obsidian tags, as `skill/name` and `domain/name`, which Obsidian can
 search and filter on. That is on by default; you can turn it off in Settings.
 
 The same is true for any other tool that reads Markdown files, including your own AI agents. They are just

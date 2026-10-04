@@ -116,7 +116,7 @@ export function BunchDialog({
           Create Documents / Second Brain / raw for me
         </button>
       )}
-      <Field label="Raw folder" hint="Your second brain's inbox. Every note filed to this bunch lands here.">
+      <Field label="Raw folder" hint="Your second brain's inbox. Archive copies made with this bunch land here.">
         <div className="row">
           <input readOnly value={rawPath} placeholder="No folder chosen yet" />
           <button className="btn btn-quiet" onClick={pick}>

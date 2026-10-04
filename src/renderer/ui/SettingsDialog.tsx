@@ -52,8 +52,11 @@ export function SettingsDialog({
         <span>Save my notes automatically</span>
       </label>
 
-      <h3 className="section-head">Filing</h3>
-      <Field label="Default raw folder" hint="Pre-fills the raw folder when you make a bunch.">
+      <h3 className="section-head">Archiving</h3>
+      <Field
+        label="Default raw folder"
+        hint="Where archive copies go when no bunch is chosen, and the starting raw folder for a new bunch."
+      >
         <div className="row">
           <input readOnly value={settings.defaultRawPath ?? ''} placeholder="No default yet" />
           <button
