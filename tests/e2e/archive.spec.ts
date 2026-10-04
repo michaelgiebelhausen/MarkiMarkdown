@@ -1,0 +1,165 @@
+import { test, expect } from '@playwright/test'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { launch, prepare, team, type Harness } from './helpers'
+
+let h: Harness
+
+test.afterEach(async () => {
+  if (h) await h.close()
+})
+
+function today(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+async function openNote(text = '# Essay\n\nFirst draft.\n', extra: Record<string, unknown> = {}) {
+  const dirs = prepare()
+  const notePath = join(dirs.downloads, 'essay.md')
+  writeFileSync(notePath, text, 'utf8')
+  h = await launch(dirs, { openFile: notePath, settings: { ...team(dirs), defaultRawPath: dirs.raw, ...extra } })
+  await expect(h.page.locator('.pm-content')).not.toBeEmpty()
+  return { dirs, notePath }
+}
+
+async function menu(action: string) {
+  await h.app.evaluate(({ BrowserWindow }, a) => BrowserWindow.getAllWindows()[0].webContents.send('menu:action', a), action)
+}
+
+const pane = () => h.page.locator('.pane-bunch')
+const archiveBox = () => pane().getByRole('checkbox', { name: /Archive \/ distribute/ })
+const saveButton = () => pane().getByRole('button', { name: 'Save', exact: true })
+const saveAndArchive = () => pane().getByRole('button', { name: 'Save and archive', exact: true })
+const tickPair = () => pane().getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true }).click()
+
+test('Save and archive saves the working file and drops a dated copy in raw', async () => {
+  const { dirs, notePath } = await openNote()
+  await tickPair()
+  await archiveBox().check()
+  await saveAndArchive().click()
+  await expect(h.page.locator('.toast')).toContainText('Saved and archived', { timeout: 20000 })
+
+  const copyPath = join(dirs.raw, `essay-${today()}.md`)
+  expect(existsSync(copyPath)).toBe(true)
+  const copy = readFileSync(copyPath, 'utf8')
+  expect(copy).toContain('archived:')
+  expect(copy).toContain('skills:\n  - librarian')
+  expect(copy).toContain('domains:\n  - thesis')
+  expect(copy).toContain('First draft.')
+
+  const working = readFileSync(notePath, 'utf8')
+  expect(working).toContain('skills:\n  - librarian')
+  expect(working).not.toContain('archived:')
+
+  await expect(archiveBox()).not.toBeChecked()
+  await expect(pane().getByRole('button', { name: 'librarian and thesis: 1 note', exact: true })).toBeVisible()
+  expect(h.errors).toEqual([])
+})
+
+test('a second archive on the same day never overwrites the first', async () => {
+  const { dirs } = await openNote()
+  await tickPair()
+  for (let i = 0; i < 2; i++) {
+    await archiveBox().check()
+    await saveAndArchive().click()
+    await expect(archiveBox()).not.toBeChecked({ timeout: 20000 })
+  }
+  expect(readdirSync(dirs.raw).sort()).toEqual([`essay-${today()}-2.md`, `essay-${today()}.md`])
+  expect(h.errors).toEqual([])
+})
+
+test('Ctrl+S does what the Save button does', async () => {
+  const { dirs } = await openNote()
+  await tickPair()
+  await archiveBox().check()
+  await menu('save')
+  await expect.poll(() => existsSync(join(dirs.raw, `essay-${today()}.md`)), { timeout: 20000 }).toBe(true)
+  expect(h.errors).toEqual([])
+})
+
+test('with nothing ticked the box explains why it cannot archive', async () => {
+  await openNote()
+  await archiveBox().check()
+  await expect(pane()).toContainText('Tick at least one skill or domain.')
+  await expect(saveButton()).toBeVisible()
+  expect(h.errors).toEqual([])
+})
+
+test('a missing raw folder blocks archiving and says so', async () => {
+  const dirs = prepare()
+  const notePath = join(dirs.downloads, 'essay.md')
+  writeFileSync(notePath, '# Essay\n', 'utf8')
+  h = await launch(dirs, { openFile: notePath, settings: { ...team(dirs), bunches: [], defaultRawPath: join(dirs.root, 'gone') } })
+  await expect(h.page.locator('.pm-content')).not.toBeEmpty()
+  await tickPair()
+  await archiveBox().check()
+  await expect(pane()).toContainText("The raw folder can't be found.")
+  await expect(saveButton()).toBeVisible()
+  expect(h.errors).toEqual([])
+})
+
+test('a raw folder that vanishes before Save gives "Saved, but not archived"', async () => {
+  const { dirs, notePath } = await openNote()
+  await tickPair()
+  await archiveBox().check()
+  await expect(saveAndArchive()).toBeVisible()
+  rmSync(dirs.raw, { recursive: true, force: true })
+  await saveAndArchive().click()
+  await expect(h.page.locator('.toast')).toContainText('Saved, but not archived', { timeout: 20000 })
+  await expect(archiveBox()).toBeChecked()
+  expect(readFileSync(notePath, 'utf8')).toContain('skills:')
+  expect(h.errors).toEqual([])
+})
+
+test('an untitled note asks for a folder on its first save and is named from its heading', async () => {
+  const dirs = prepare()
+  h = await launch(dirs, { settings: { ...team(dirs), defaultRawPath: dirs.raw } })
+  await h.page.locator('.cm-content').click()
+  await h.page.keyboard.type('# Cell walls\n\nPlants have them.')
+  await h.app.evaluate(({ dialog }, dir) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog
+  }, dirs.downloads)
+  await saveButton().click()
+  await expect.poll(() => existsSync(join(dirs.downloads, 'cell-walls.md')), { timeout: 20000 }).toBe(true)
+  expect(readFileSync(join(dirs.downloads, 'cell-walls.md'), 'utf8')).toContain('Plants have them.')
+  await expect(h.page.locator('.chip-name')).toHaveText('cell-walls.md')
+  expect(h.errors).toEqual([])
+})
+
+test('choosing another working folder moves the note there', async () => {
+  const { dirs, notePath } = await openNote()
+  const other = join(dirs.root, 'drafts')
+  mkdirSync(other)
+  await h.app.evaluate(({ dialog }, dir) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog
+    dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as typeof dialog.showMessageBox
+  }, other)
+  await pane().getByRole('button', { name: 'Working folder', exact: true }).click()
+  await expect(h.page.locator('.toast')).toContainText('Moved to drafts', { timeout: 20000 })
+  expect(existsSync(join(other, 'essay.md'))).toBe(true)
+  expect(existsSync(notePath)).toBe(false)
+  expect(h.errors).toEqual([])
+})
+
+test('a 1.1 note opens with its ticks lit, and the first tick moves it to the new keys', async () => {
+  const { notePath } = await openNote(
+    '---\nagents:\n  - librarian\nartifacts:\n  - thesis\ntags: [agent/librarian, artifact/thesis]\n---\n# Old\n'
+  )
+  await expect(pane().getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+  // opening alone rewrites nothing
+  expect(readFileSync(notePath, 'utf8')).toContain('agents:')
+
+  await pane().getByRole('button', { name: 'librarian skill', exact: true }).click()
+  const source = h.page.locator('.cm-content')
+  await expect(source).not.toContainText('agents:')
+  await expect(source).not.toContainText('artifacts:')
+  await expect(source).toContainText('domains:')
+  await expect(source).toContainText('domain/thesis')
+  await expect(source).not.toContainText('agent/librarian')
+  expect(h.errors).toEqual([])
+})

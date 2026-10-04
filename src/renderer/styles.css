@@ -581,3 +581,17 @@ button:focus-visible,
   background: var(--warn-bg); border: 1px solid var(--warn-line);
   border-radius: 10px; box-shadow: var(--shadow); padding: 9px 14px; font-size: 12.5px;
 }
+
+.save-locations { display: flex; flex-direction: column; gap: 6px; }
+.folder-field {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg-raised); color: var(--text); font-size: 12.5px; text-align: left;
+}
+.folder-field:hover { border-color: var(--accent); }
+.folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+.archive-check { align-items: flex-start; margin: 4px 0; }
+.archive-check > span { display: flex; flex-direction: column; gap: 2px; }
+.archive-title { font-weight: 550; }
+.save-reason { margin: 0; font-size: 12px; color: var(--danger); }
+.save-row { display: flex; justify-content: flex-end; }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ulid } from 'ulid'
 import { DocumentStore } from './state/document'
+import { suggestName, suggestTitle } from './state/naming'
+import { useSaveFlow } from './state/useSaveFlow'
+import { SaveButton, SaveLocations } from './funkybunch/SaveControls'
 import { CodePane, type CodeCommands } from './editors/CodePane'
 import { RenderedPane, type RenderedCommands } from './editors/RenderedPane'
 import { SyncController } from './editors/sync'
@@ -163,6 +166,20 @@ export default function App() {
     return name ? (bunches.find((b) => b.name.toLowerCase() === name) ?? null) : null
   }, [ticks.bunch, bunches])
 
+  const saveFlow = useSaveFlow({
+    store,
+    paths: doc.paths,
+    originalPath: doc.originalPath,
+    ticks,
+    activeBunch,
+    defaultRawPath: settings?.defaultRawPath ?? '',
+    confirmedFileMoves: settings?.confirmedFileMoves ?? false,
+    onConfirmedFileMoves: () => void saveSettings({ confirmedFileMoves: true }),
+    onLedger: setLedger,
+    onLedgerNotSaved: () => warnNotSaving('ledger'),
+    pushToast
+  })
+
   const lastBunchId = useMemo(() => lastBunchFor(ledger, noteId), [ledger, noteId])
 
   const plan = useMemo(
@@ -295,8 +312,9 @@ export default function App() {
         return
       }
       store.load(result.file)
+      saveFlow.reset()
     },
-    [pushToast]
+    [pushToast, saveFlow.reset]
   )
 
   useEffect(() => window.marki.on.openPath((path) => void openFile(path)), [openFile])
@@ -352,26 +370,7 @@ export default function App() {
 
   /* ---------------- saving ---------------- */
 
-  const saveNow = useCallback(async (): Promise<boolean> => {
-    if (store.state.paths.length === 0 || store.state.isPlainText) {
-      const result = await window.marki.files.saveAs(store.state.fileName, store.fullText())
-      if (!result.ok) {
-        if (result.message) pushToast({ text: result.message, tone: 'warn' })
-        return false
-      }
-      store.afterFiling([result.path])
-      store.setFileName(baseName(result.path) || store.state.fileName)
-      pushToast({ text: 'Saved.' })
-      return true
-    }
-    const result = await window.marki.files.saveAll(store.state.paths, store.fullText())
-    if (!result.ok) {
-      pushToast({ text: result.failures[0]?.message ?? 'The note could not be saved.', tone: 'warn' })
-      return false
-    }
-    store.markSaved()
-    return true
-  }, [pushToast])
+  // Save, Ctrl+S and the pane's Save button all go through saveFlow.save.
 
   // Autosave: quiet, and only for notes that already have a home.
   useEffect(() => {
@@ -644,7 +643,7 @@ export default function App() {
     (action: string) => {
       switch (action) {
         case 'open': return void openFile()
-        case 'save': return void saveNow()
+        case 'save': return void saveFlow.save()
         case 'save-as': return void (async () => {
           const result = await window.marki.files.saveAs(doc.fileName, store.fullText())
           if (result.ok) {
@@ -691,7 +690,7 @@ export default function App() {
         default: return
       }
     },
-    [openFile, saveNow, addProperties, tidy, convert, cleanWithAi, runFiling, togglePaneKey, doc.fileName, doc.paths, pushToast]
+    [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, runFiling, togglePaneKey, doc.fileName, doc.paths, pushToast]
   )
 
   useEffect(() => window.marki.on.menuAction(handleAction), [handleAction])
@@ -856,6 +855,8 @@ export default function App() {
                     missingMemberIds={missingMemberIds}
                     missingRawPaths={missingRaw}
                     activeBunchId={activeBunch?.id ?? null}
+                    locations={<SaveLocations flow={saveFlow} />}
+                    footer={<SaveButton flow={saveFlow} />}
                     onToggleSkill={toggleSkill}
                     onToggleDomain={toggleDomain}
                     onToggleCell={toggleCell}
@@ -867,7 +868,7 @@ export default function App() {
                         preset: {
                           skillIds: ticks.skillIds,
                           domainIds: ticks.domainIds,
-                          rawPath: activeBunch?.rawPath || settings.defaultRawPath || ''
+                          rawPath: saveFlow.rawPath
                         }
                       })
                     }
@@ -994,20 +995,4 @@ export default function App() {
       )}
     </div>
   )
-}
-
-function suggestTitle(body: string): string {
-  const heading = /^#{1,6}\s+(.+)$/m.exec(body)
-  return heading ? heading[1].trim() : ''
-}
-
-function suggestName(body: string, fallback: string): string {
-  const title = suggestTitle(body)
-  if (!title) return fallback
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9\u00c0-\u024f]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-  return slug ? `${slug}.md` : fallback
 }
