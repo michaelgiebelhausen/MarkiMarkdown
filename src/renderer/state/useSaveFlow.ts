@@ -50,7 +50,8 @@ export interface SaveFlow {
   chooseRawFolder: () => Promise<void>
   /**
    * Save, Ctrl+S and the Save button. Pressed while another save or a move is running, it
-   * queues one more save that runs once that job has finished.
+   * queues one more save that runs once that job has finished, as long as the same note
+   * is still open then.
    */
   save: () => Promise<void>
   /**
@@ -58,7 +59,7 @@ export interface SaveFlow {
    * the note's text and the same note is still open (for "Save first" before an open or a close).
    */
   saveAndWait: () => Promise<boolean>
-  /** Save As: a new file the student names. Shares the same guard. */
+  /** Save As: a new file the student names. Shares the same guard, and queues like Save. */
   saveAs: () => Promise<void>
   /** The quiet autosave. Shares the one-at-a-time guard, so it never races a save or a move. */
   autosave: () => Promise<void>
@@ -80,6 +81,12 @@ const clause = (message: string) => message.trim().replace(/\.$/, '')
 
 type Job = 'user' | 'auto'
 
+/** A Save or Save As pressed while another job ran, and the note (by load generation) it was pressed on. */
+interface FollowUp {
+  kind: 'save' | 'save-as'
+  generation: number
+}
+
 export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const { store, paths, originalPath, ticks, members, activeBunch, defaultRawPath, pushToast } = input
   const [archive, setArchive] = useState(false)
@@ -89,9 +96,12 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const [busy, setBusy] = useState(false)
   const [settled, setSettled] = useState(0)
   const running = useRef<{ job: Job; done: Promise<void> } | null>(null)
-  /** Save was pressed while another job ran: one more save once it finishes. */
-  const followUpWanted = useRef(false)
-  const [followUps, setFollowUps] = useState(0)
+  /**
+   * Save or Save As pressed while another job ran: each runs once that job finishes, at most
+   * once per kind and note, and only while the note it was pressed on is still open.
+   */
+  const followUps = useRef<FollowUp[]>([])
+  const [followUpTurn, setFollowUpTurn] = useState(0)
   /** The note (by load generation) whose failed autosave was already reported. */
   const autosaveWarned = useRef<number | null>(null)
 
@@ -132,8 +142,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
    * save is writing the same file, and a double click must not start a second save over
    * the first. A click that lands while a quiet autosave is writing waits for it, then
    * goes ahead; anything else that lands while a click's job runs is dropped (the buttons
-   * are disabled meanwhile, and that job is already doing the work), except Save, which
-   * calls `whenBusy` to queue one more save.
+   * are disabled meanwhile, and that job is already doing the work), except Save and
+   * Save As, which call `whenBusy` to queue themselves.
    */
   const exclusive = async (job: Job, body: () => Promise<boolean | void>, whenBusy?: () => void): Promise<void> => {
     if (job === 'user' && running.current?.job === 'auto') await running.current.done
@@ -154,11 +164,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       if (job === 'user') setBusy(false)
       // A failed autosave waits for the next keystroke rather than retrying every pause.
       if (job === 'user' || wrote === true) setSettled((n) => n + 1)
-      // Run the queued save from the next render, so it sees everything this job changed.
-      if (followUpWanted.current) {
-        followUpWanted.current = false
-        setFollowUps((n) => n + 1)
-      }
+      // Run a queued save from the next render, so it sees everything this job changed.
+      if (followUps.current.length > 0) setFollowUpTurn((n) => n + 1)
     }
   }
 
@@ -330,6 +337,13 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     }
   }
 
+  /** Remembers a Save or Save As pressed while another job runs, for the note open now. */
+  const queue = (kind: FollowUp['kind']) => () => {
+    const generation = store.loadGeneration
+    if (followUps.current.some((f) => f.kind === kind && f.generation === generation)) return
+    followUps.current.push({ kind, generation })
+  }
+
   const save = () =>
     exclusive(
       'user',
@@ -337,22 +351,45 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
         await guardedSave()
       },
       // Pressed while another save or a move runs: save once more when it has finished.
+      queue('save')
+    )
+
+  /**
+   * Runs a queued Save or Save As, but only for the note it was pressed on: once another
+   * note is open, that one was already saved or let go when it was replaced.
+   */
+  const runFollowUp = (next: FollowUp) =>
+    exclusive(
+      'user',
+      async () => {
+        if (!sameNote(next.generation)) return
+        if (next.kind === 'save') await guardedSave()
+        else await guardedSaveAs()
+      },
+      // Something else got the guard first: go back to the front of the line.
       () => {
-        followUpWanted.current = true
+        followUps.current.unshift(next)
       }
     )
 
-  // The newest save, for the queued one to call from a fresh render.
-  const saveRef = useRef(save)
-  saveRef.current = save
+  // The newest runFollowUp, for the queue to call from a fresh render.
+  const runFollowUpRef = useRef(runFollowUp)
+  runFollowUpRef.current = runFollowUp
   useEffect(() => {
-    if (followUps > 0) void saveRef.current()
-  }, [followUps])
+    if (followUpTurn === 0) return
+    let next = followUps.current.shift()
+    while (next && !sameNote(next.generation)) next = followUps.current.shift()
+    if (next) void runFollowUpRef.current(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followUpTurn])
 
   const saveAndWait = async (): Promise<boolean> => {
     while (running.current) await running.current.done
     let saved = false
     await exclusive('user', async () => {
+      // This save covers a Save already queued for the same note.
+      const generation = store.loadGeneration
+      followUps.current = followUps.current.filter((f) => f.kind !== 'save' || f.generation !== generation)
       saved = await guardedSave()
     })
     return saved
@@ -380,14 +417,16 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     pushToast({ text: `Saved as ${name}.` })
   }
 
-  const saveAs = () =>
-    exclusive('user', async () => {
-      try {
-        await runSaveAs()
-      } catch {
-        pushToast({ text: SAVE_FAILED, tone: 'warn' })
-      }
-    })
+  const guardedSaveAs = async () => {
+    try {
+      await runSaveAs()
+    } catch {
+      pushToast({ text: SAVE_FAILED, tone: 'warn' })
+    }
+  }
+
+  // Pressed while another save or a move runs: Save As once that has finished.
+  const saveAs = () => exclusive('user', guardedSaveAs, queue('save-as'))
 
   const runMove = async () => {
     const generation = store.loadGeneration
@@ -511,6 +550,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     })
 
   const reset = useCallback(() => {
+    // A Save or Save As still queued belonged to the note that was replaced.
+    followUps.current = []
     setPendingDir('')
     setArchive(false)
     setRawOverride(null)

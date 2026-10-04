@@ -67,6 +67,12 @@ async function releaseSaveReply() {
 
 const saveCalls = () => h.app.evaluate(() => (globalThis as unknown as { saveCalls: number }).saveCalls)
 
+/** Waits until the first save has written its file and is waiting for releaseSaveReply. */
+async function saveIsHeld() {
+  const held = () => h.app.evaluate(() => typeof (globalThis as unknown as { releaseSave?: () => void }).releaseSave)
+  await expect.poll(held, { timeout: 10000 }).toBe('function')
+}
+
 test('Save As writes the new file and the note lives there; a failed one says so, a cancelled one says nothing', async () => {
   const { dirs } = await openNote({ autosave: false })
   await h.app.evaluate(({ dialog }) => {
@@ -289,5 +295,68 @@ test('a failed autosave says so once, and keeps the text', async () => {
   await expect(warning).toHaveCount(1)
   await expect(h.page.locator('.cm-content')).toContainText('Unsaved two.')
   expect(readFileSync(notePath, 'utf8')).toBe('# Essay\n\nFirst draft.\n')
+  expect(h.errors).toEqual([])
+})
+
+test('a save queued during a save is dropped when another note is opened meanwhile', async () => {
+  const { dirs, notePath } = await openNote({ autosave: false })
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  await typeAtEnd(' One.')
+  await holdFirstSaveReply()
+  await menu('save')
+  await saveIsHeld()
+  await menu('save') // queued for essay.md
+
+  await answerSaveChanges(1) // Don't save: the held save has already written " One."
+  await openPath(other)
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.')
+  await releaseSaveReply()
+
+  await expect(toasts().filter({ hasText: 'Saved essay.md. Another note is open now.' })).toHaveCount(1, { timeout: 20000 })
+  await h.page.waitForTimeout(1000)
+  // the queued save belonged to essay.md, so other.md is never written
+  expect(await saveCalls()).toBe(1)
+  expect(readFileSync(notePath, 'utf8')).toContain('One.')
+  await expect(h.page.locator('.chip-name')).toHaveText('other.md')
+  expect(h.errors).toEqual([])
+})
+
+test('Save As pressed during a save runs once that save has finished', async () => {
+  const { dirs } = await openNote({ autosave: false })
+  const copy = join(dirs.downloads, 'copy.md')
+  await h.app.evaluate(({ dialog }, target) => {
+    dialog.showSaveDialog = (async () => ({ canceled: false, filePath: target })) as typeof dialog.showSaveDialog
+  }, copy)
+  await typeAtEnd(' One.')
+  await holdFirstSaveReply()
+  await menu('save')
+  await saveIsHeld()
+  await menu('save-as')
+  await releaseSaveReply()
+
+  await expect(toasts().filter({ hasText: 'Saved as copy.md.' })).toHaveCount(1, { timeout: 20000 })
+  await expect(h.page.locator('.chip-name')).toHaveText('copy.md')
+  expect(readFileSync(copy, 'utf8')).toContain('One.')
+  expect(h.errors).toEqual([])
+})
+
+test('typing during a "Save first" before opening another note asks again instead of losing it', async () => {
+  const { dirs, notePath } = await openNote({ autosave: false })
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  await typeAtEnd(' Keep this.')
+  await answerSaveChanges(0) // Save, every time it is asked
+  await holdFirstSaveReply()
+  await openPath(other)
+  await saveIsHeld()
+  await typeAtEnd(' And this.')
+  await releaseSaveReply()
+
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.', { timeout: 20000 })
+  expect(await asked()).toBe(2)
+  const saved = readFileSync(notePath, 'utf8')
+  expect(saved).toContain('Keep this.')
+  expect(saved).toContain('And this.')
   expect(h.errors).toEqual([])
 })

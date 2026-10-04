@@ -335,19 +335,22 @@ export default function App() {
   /**
    * About to replace the note on screen: when it has unsaved changes, ask Save, Don't save
    * or Cancel. True when it is fine to go ahead (saved, or the student chose not to save).
+   * Anything typed while the save was writing is unsaved again, so it asks again.
    */
   const mayReplaceNote = useCallback(async (): Promise<boolean> => {
-    if (!store.state.dirty) return true
     try {
-      const answer = await window.marki.dialogs.confirm({
-        message: `Save changes to ${store.state.fileName}?`,
-        detail: "If you don't save, your changes will be lost.",
-        buttons: ['Save', "Don't save", 'Cancel']
-      })
-      if (!answer.ok || answer.index === 2) return false
-      if (answer.index === 1) return true
-      // The save says why when it fails; the note stays open then.
-      return await saveFlowRef.current.saveAndWait()
+      while (store.state.dirty) {
+        const answer = await window.marki.dialogs.confirm({
+          message: `Save changes to ${store.state.fileName}?`,
+          detail: "If you don't save, your changes will be lost.",
+          buttons: ['Save', "Don't save", 'Cancel']
+        })
+        if (!answer.ok || answer.index === 2) return false
+        if (answer.index === 1) return true
+        // The save says why when it fails; the note stays open then.
+        if (!(await saveFlowRef.current.saveAndWait())) return false
+      }
+      return true
     } catch {
       pushToast({ text: 'The other note was not opened, so nothing here was lost. Try again.', tone: 'warn' })
       return false
