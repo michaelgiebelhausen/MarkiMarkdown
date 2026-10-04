@@ -8,7 +8,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/lang
 import { tags } from '@lezer/highlight'
 import type { DocumentStore } from '@renderer/state/document'
 import type { SyncController } from './sync'
-import { foldRange, setYamlFold, yamlFold, type YamlFoldState } from './yamlFold'
+import { fromStore, hiddenRange, setYamlFold, yamlFold, yamlFoldConfig, type YamlFoldState } from './yamlFold'
 
 const theme = EditorView.theme({
   '&': { height: '100%', fontSize: 'var(--code)', backgroundColor: 'transparent' },
@@ -165,7 +165,8 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
       const selected = target.state.sliceDoc(from, to)
       target.dispatch({
         changes: { from, to, insert: before + selected + after },
-        selection: { anchor: from + before.length, head: from + before.length + selected.length }
+        selection: { anchor: from + before.length, head: from + before.length + selected.length },
+        userEvent: 'input'
       })
       return true
     }
@@ -186,7 +187,11 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
         syntaxHighlighting(highlight),
         noSpellcheckOnSyntax,
         activeRangeField,
-        yamlFold(() => openRef.current()),
+        yamlFold(() => openRef.current(), {
+          folded: yamlRef.current.folded,
+          broken: yamlRef.current.broken,
+          summary: yamlRef.current.summary
+        }),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'true', 'aria-label': 'Markdown source' }),
         theme,
@@ -197,13 +202,6 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
           if (update.selectionSet || update.docChanged) {
             const offset = update.state.selection.main.head - sync.bodyStart
             sync.setActive(sync.blockAtOffset(Math.max(0, offset)))
-          }
-          // Moving the cursor into folded YAML (Ctrl+Home, find, arrow keys) opens it, so
-          // nobody types into text they cannot see.
-          if (update.selectionSet && update.transactions.some((tr) => tr.isUserEvent('select'))) {
-            const range = foldRange(update.state)
-            const fold = yamlRef.current
-            if (range && fold.folded && !fold.broken && update.state.selection.main.head <= range.to) openRef.current()
           }
         })
       ]
@@ -230,7 +228,8 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
           selection: {
             anchor: range.from + before.length,
             head: range.from + before.length + selected.length
-          }
+          },
+          userEvent: 'input'
         })
         created.focus()
       },
@@ -238,7 +237,8 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
         const range = created.state.selection.main
         created.dispatch({
           changes: { from: range.from, to: range.to, insert: value },
-          selection: { anchor: range.from + value.length }
+          selection: { anchor: range.from + value.length },
+          userEvent: 'input'
         })
         created.focus()
       },
@@ -278,12 +278,26 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * Where the store's undo history stood at the last text this pane was given. The store's
+   * undo and redo are the only changes that leave (or used up) something to redo, and the
+   * only store changes that put back text the student may not see; anything else from the
+   * store (a tick, the other pane, a file opening, an id stamped on save) clears the redo
+   * list or loads a new note. A tick right after an undo is also counted as a step through
+   * history: that only opens the YAML, which is always safe.
+   */
+  const storeHistory = useRef({ generation: store.loadGeneration, canRedo: store.canRedo() })
+
   // Follow the other pane without disturbing the cursor: replace only what differs.
   useEffect(() => {
     const current = view.current
     if (!current) return
+    const before = storeHistory.current
+    const now = { generation: store.loadGeneration, canRedo: store.canRedo() }
+    storeHistory.current = now
     const existing = current.state.doc.toString()
     if (existing === text) return
+    const throughHistory = now.generation === before.generation && (now.canRedo || before.canRedo)
     let start = 0
     const max = Math.min(existing.length, text.length)
     while (start < max && existing[start] === text[start]) start += 1
@@ -295,23 +309,33 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands, ya
     }
     current.dispatch({
       changes: { from: start, to: endOld, insert: text.slice(start, endNew) },
-      scrollIntoView: false
+      scrollIntoView: false,
+      annotations: fromStore.of(throughHistory ? 'history' : 'echo')
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text])
 
-  // Apply the fold, and keep the cursor out of anything it hides.
+  // Apply the fold when it changes. yaml is compared field by field: App rebuilds the
+  // object on every tick reading.
   useEffect(() => {
     const current = view.current
     if (!current) return
-    current.dispatch({ effects: setYamlFold.of(yaml) })
-    if (!yaml.folded || yaml.broken) return
-    const range = foldRange(current.state)
-    if (range && current.state.selection.main.head <= range.to) {
-      current.dispatch({ selection: { anchor: Math.min(range.to + 1, current.state.doc.length) } })
-    }
-    // yaml is compared field by field: App rebuilds the object on every tick reading.
+    const now = yamlFoldConfig(current.state)
+    if (now.folded === yaml.folded && now.broken === yaml.broken && now.summary === yaml.summary) return
+    current.dispatch({ effects: setYamlFold.of({ folded: yaml.folded, broken: yaml.broken, summary: yaml.summary }) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yaml.folded, yaml.broken, yaml.summary, text])
+  }, [yaml.folded, yaml.broken, yaml.summary])
+
+  // Keep the cursor out of anything the fold hides: when it folds, and when the text moves.
+  useEffect(() => {
+    const current = view.current
+    if (!current) return
+    const range = hiddenRange(current.state)
+    if (range && current.state.selection.ranges.some((r) => r.from <= range.to)) {
+      current.dispatch({ selection: { anchor: range.to + 1 } })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yaml.folded, yaml.broken, text])
 
   return <div className="cm-host" ref={host} />
 }

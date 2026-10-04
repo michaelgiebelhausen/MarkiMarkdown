@@ -63,7 +63,7 @@ test('broken YAML is never folded, and is marked', async () => {
   expect(h.errors).toEqual([])
 })
 
-test('typing at the start of the body never lands inside the folded YAML', async () => {
+test('typing at the end of the note leaves the folded YAML as it was', async () => {
   const dirs = await openFolded(NOTE)
   await source().click()
   await h.page.keyboard.press('Control+End')
@@ -84,5 +84,65 @@ test('Backspace at the start of the body cannot join it to the hidden closing fe
   await expect
     .poll(() => readFileSync(join(dirs.downloads, 'note.md'), 'utf8'), { timeout: 10000 })
     .toBe('---\nskills: [librarian]\ntags: [a]\n---\nX# Note\n\nBody.\n')
+  expect(h.errors).toEqual([])
+})
+
+test('Ctrl+A with the YAML folded opens it, and typing replaces only the body', async () => {
+  const dirs = await openFolded(NOTE)
+  await source().focus()
+  await h.page.keyboard.press('Control+A')
+  await expect(source()).toContainText('skills:')
+  await h.page.keyboard.type('X')
+  await expect
+    .poll(() => readFileSync(join(dirs.downloads, 'note.md'), 'utf8'), { timeout: 10000 })
+    .toBe('---\nskills: [librarian]\ntags: [a]\n---\nX')
+  expect(h.errors).toEqual([])
+})
+
+test('Ctrl+Home opens the folded YAML', async () => {
+  await openFolded(NOTE)
+  await source().focus()
+  await h.page.keyboard.press('Control+Home')
+  await expect(source()).toContainText('skills:')
+  await expect(h.page.getByRole('button', { name: 'Hide YAML' })).toBeVisible()
+  expect(h.errors).toEqual([])
+})
+
+test('undo that puts back hidden YAML opens the fold', async () => {
+  await openFolded('---\ntitle: Old\nskills: [librarian]\ntags: [a]\n---\n# Note\n\nBody.\n')
+  const menu = (action: string) =>
+    h.app.evaluate(({ BrowserWindow }, a) => BrowserWindow.getAllWindows()[0].webContents.send('menu:action', a), action)
+  const title = h.page.locator('.props-title')
+
+  // Change the title in the open YAML.
+  await h.page.getByRole('button', { name: 'View YAML' }).click()
+  await source().click()
+  await h.page.keyboard.press('Control+Home')
+  await h.page.keyboard.press('ArrowDown')
+  await h.page.keyboard.press('End')
+  await h.page.keyboard.type('er')
+  await expect(title).toHaveText('Older')
+  // Let the typing burst close, so the title and the body are separate undo steps.
+  await h.page.waitForTimeout(800)
+
+  // Fold it away and type in the body.
+  await h.page.getByRole('button', { name: 'Hide YAML' }).click()
+  await expect(source()).not.toContainText('title:')
+  await source().focus()
+  await h.page.keyboard.type('Z')
+  await expect(source()).toContainText('Z# Note')
+  await h.page.waitForTimeout(800)
+
+  // Undo from the menu until the title comes back. Until then the fold stays shut; the
+  // undo that changes the hidden title opens it.
+  for (let i = 0; i < 6 && (await title.textContent()) !== 'Old'; i++) {
+    await expect(h.page.getByRole('button', { name: 'View YAML' })).toBeVisible()
+    await menu('undo')
+    await h.page.waitForTimeout(300)
+  }
+  await expect(title).toHaveText('Old')
+  await expect(h.page.getByRole('button', { name: 'Hide YAML' })).toBeVisible()
+  await expect(source()).toContainText('title: Old')
+  await expect(source()).not.toContainText('Z# Note')
   expect(h.errors).toEqual([])
 })
