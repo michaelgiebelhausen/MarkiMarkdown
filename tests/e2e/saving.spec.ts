@@ -465,10 +465,17 @@ test('a window whose page crashed closes without asking about changes it can no 
   await expect(h.page.locator('.chip-dot')).toHaveCount(1)
   await h.page.waitForTimeout(300)
 
+  // The window knows about the unsaved words: closing it now asks (Cancel keeps it open).
+  await answerSaveChanges(2)
+  await closeWindow(first)
+  expect(await asked()).toBe(1)
+  expect(await isOpen(first)).toBe(true)
+
   await answerSaveChanges(2) // Cancel, were it to ask
   await h.app.evaluate(({ BrowserWindow }, i) => BrowserWindow.fromId(i)?.webContents.forcefullyCrashRenderer(), first)
   const crashed = () => h.app.evaluate(({ BrowserWindow }, i) => BrowserWindow.fromId(i)?.webContents.isCrashed() ?? true, first)
   await expect.poll(crashed, { timeout: 10000 }).toBe(true)
+  // Straight away, whether or not the main process has heard render-process-gone yet.
   await closeWindow(first)
   await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
   expect(await asked()).toBe(0)

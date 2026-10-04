@@ -112,7 +112,7 @@ function askToSave(win: BrowserWindow, name: string): number {
 
 const CLOSE_STUCK = 0
 
-/** The page has crashed or stopped responding, so it can't save: Close or Cancel. */
+/** The page has stopped responding, so it can't save now: Close or Cancel. */
 function askToCloseStuck(win: BrowserWindow, name: string): number {
   try {
     return dialog.showMessageBoxSync(win, {
@@ -174,17 +174,37 @@ export function createWindow(openPath?: string): BrowserWindow {
   win.once('ready-to-show', () => win.show())
 
   const id = win.id
+
+  /**
+   * The page has gone (crashed or killed): whatever it had not saved went with it, and it
+   * can no longer answer a save, so closing must not ask about it or wait for it.
+   */
+  const forgetGonePage = (reason: string) => {
+    if (unsaved.has(id) || quitAfterSave.has(id)) {
+      log.error(`A window's page stopped (${reason}) with changes that weren't saved: ${unsaved.get(id) ?? 'this note'}`)
+    }
+    unsaved.delete(id)
+    quitAfterSave.delete(id)
+    unresponsive.delete(id)
+  }
+
   /** True when the window may close now; otherwise it has asked, or is saving first. */
   const mayClose = (): boolean => {
     if (closeApproved.has(id)) return true
     const duringQuit = quitting
+    // The page has crashed: whatever it had not saved went with it, and it can no longer
+    // save. isCrashed() can turn true before render-process-gone reaches us, so treat it
+    // the same way here rather than asking about changes nobody can save.
+    if (win.webContents.isCrashed()) {
+      forgetGonePage('crashed')
+      return true
+    }
     const saving = quitAfterSave.has(id)
     const note = unsaved.get(id)
     if (!saving && !note) return true
-    const stuck = win.webContents.isCrashed() || unresponsive.has(id)
 
-    // A page that has stopped can't save: offer only Close or Cancel.
-    if (stuck) {
+    // A page that has stopped responding can't save now: offer only Close or Cancel.
+    if (unresponsive.has(id)) {
       if (duringQuit && quitCancelled) return false
       if (askToCloseStuck(win, note ?? 'this note') === CLOSE_STUCK) return true
       if (duringQuit) {
@@ -239,14 +259,7 @@ export function createWindow(openPath?: string): BrowserWindow {
 
   // The page has gone (crashed or killed): whatever it had not saved went with it, and it
   // can no longer answer a save, so closing must not ask about it or wait for it.
-  win.webContents.on('render-process-gone', (_event, details) => {
-    if (unsaved.has(id) || quitAfterSave.has(id)) {
-      log.error(`A window's page stopped (${details.reason}) with changes that weren't saved: ${unsaved.get(id) ?? 'this note'}`)
-    }
-    unsaved.delete(id)
-    quitAfterSave.delete(id)
-    unresponsive.delete(id)
-  })
+  win.webContents.on('render-process-gone', (_event, details) => forgetGonePage(details.reason))
 
   win.on('closed', () => {
     unsaved.delete(id)
