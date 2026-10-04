@@ -24,7 +24,7 @@ import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtT
 import { tidyMarkdown } from '@shared/markdown/tidy'
 import { archiveCount, noteIdOf } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
-import { applyTicks, readTicks, type TickReading, type Ticks } from '@shared/ticks'
+import { applyTicks, namedCount, readTicks, type TickReading, type Ticks } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
@@ -169,7 +169,7 @@ export default function App() {
     return {
       folded: settings?.yamlFolded ?? true,
       broken: !ticks.ok,
-      summary: `YAML · ${count(ticks.skillNames.length, 'skill')} · ${count(ticks.domainNames.length, 'domain')} · ${count(ticks.tagCount, 'tag')}`
+      summary: `YAML · ${count(namedCount(ticks, 'skill'), 'skill')} · ${count(namedCount(ticks, 'domain'), 'domain')} · ${count(ticks.tagCount, 'tag')}`
     }
   }, [settings?.yamlFolded, ticks])
 

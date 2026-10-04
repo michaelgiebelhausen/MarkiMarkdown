@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentStore } from './document'
 import type { Bunch, LedgerEntry, Member } from '@shared/types'
-import { readTicks, type TickReading } from '@shared/ticks'
+import { namedCount, readTicks, type TickReading } from '@shared/ticks'
 import { BLOCK_REASONS, planSave, type SavePlan } from '@shared/archive'
 import { ulid } from 'ulid'
 import { addArchived, mergeFrontMatter, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
@@ -121,7 +121,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     }
   }, [rawPath])
 
-  const tickCount = ticks.skillNames.length + ticks.domainNames.length
+  const tickCount = namedCount(ticks)
   const plan = useMemo(
     () => planSave({ yamlOk: ticks.ok, rawPath, rawMissing, tickCount, workingDir }),
     [ticks.ok, rawPath, rawMissing, tickCount, workingDir]
@@ -268,7 +268,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       yamlOk: reading.ok,
       rawPath,
       rawMissing,
-      tickCount: reading.skillNames.length + reading.domainNames.length,
+      tickCount: namedCount(reading),
       workingDir: dirName(path)
     })
     if (!now.canArchive) {

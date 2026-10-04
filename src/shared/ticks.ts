@@ -32,17 +32,16 @@ export interface TickReading extends Ticks {
   reason: string
   /**
    * Every name listed under skills and then 1.1 agents, known or not, as written and in
-   * the note's order. Each member the note names appears once, as its spelling (below).
+   * the note's order. Each member the note names appears once as its spelling (below).
    * Another name reaching the same member is dropped when it differs from that spelling
-   * only in case, and otherwise kept as an unknown name. Names nobody has count once
-   * when they differ only in case; the first is kept.
+   * only in case, and otherwise kept as a silent alias: listed here, so it is written
+   * back in place, but not ticked twice and not in unknown. Names nobody has, and
+   * aliases, count once when they differ only in case; the first is kept. To count
+   * names without aliases, use namedCount.
    */
   skillNames: string[]
   domainNames: string[]
-  /**
-   * Names in the YAML that match nobody of that kind in the roster, and names that reach
-   * a member the note already names more closely (see skillNames).
-   */
+  /** Names in the YAML that match nobody of that kind in the roster. */
   unknown: UnknownName[]
   /**
    * For each member the note names, by member id, the spelling the note uses for it:
@@ -182,9 +181,10 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
   // (exactly its name, then its name in another case, then its name key; the first of
   // equally close names), wherever that name sits in the list. Another name that reaches
   // the same member counts once with it when it differs from that spelling only in case;
-  // otherwise it is kept as an unknown name, so nothing the student typed disappears (it
-  // may be the name of a member since removed from the roster). Names nobody has count
-  // once when they differ only in case. Names keep the note's order.
+  // otherwise it is kept as a silent alias (it may be the name of a twin since removed
+  // from the roster): listed, so it is written back in place, but not ticked again and
+  // not reported as unknown. Names nobody has, and aliases, count once when they differ
+  // only in case. Names keep the note's order.
   const resolve = (key: string, alias: string, kind: MemberKind, ids: string[], out: string[]) => {
     const all = [...names(data[key]), ...names(data[alias])]
     const matches = all.map((name) => matchMember(members, kind, name))
@@ -194,9 +194,10 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
       const previous = best.get(match.member.id)
       if (previous === undefined || match.rank < (matches[previous]?.rank ?? Infinity)) best.set(match.member.id, index)
     })
-    const unknownSeen: string[] = []
+    const seen: string[] = []
     all.forEach((name, index) => {
       const match = matches[index]
+      const lower = name.toLowerCase()
       if (match) {
         const chosen = best.get(match.member.id) ?? index
         if (chosen === index) {
@@ -205,11 +206,16 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
           out.push(name)
           return
         }
-        if ((all[chosen] ?? '').toLowerCase() === name.toLowerCase()) return
+        // Another spelling of a member the note already names: a silent alias. It is kept
+        // in place, so nothing the student typed disappears, but it ticks nothing more and
+        // asks nothing (no chip).
+        if ((all[chosen] ?? '').toLowerCase() === lower || seen.includes(lower)) return
+        seen.push(lower)
+        out.push(name)
+        return
       }
-      const lower = name.toLowerCase()
-      if (unknownSeen.includes(lower)) return
-      unknownSeen.push(lower)
+      if (seen.includes(lower)) return
+      seen.push(lower)
       reading.unknown.push({ name, kind })
       out.push(name)
     })
@@ -221,6 +227,17 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
   reading.usedAliases = 'agents' in data || 'artifacts' in data
   reading.tagCount = normaliseTags(data.tags).length
   return reading
+}
+
+/**
+ * How many skills and domains (or only one kind) the note names: each member once, plus
+ * each name nobody has. Aliases are not counted again.
+ */
+export function namedCount(reading: TickReading, kind?: MemberKind): number {
+  const unknown = reading.unknown.filter((u) => kind === undefined || u.kind === kind).length
+  const skills = kind === 'domain' ? 0 : reading.skillIds.length
+  const domains = kind === 'skill' ? 0 : reading.domainIds.length
+  return skills + domains + unknown
 }
 
 export interface ApplyOptions {
@@ -254,8 +271,9 @@ function slug(name: string): string {
  * the spelling the note uses for it (readTicks' spellings); a newly ticked member is
  * written under the roster's name; paths are always the roster's. Names in the YAML that
  * nobody in the roster has are kept, with an empty path, so a student's typing is never
- * lost; so is a second name for a member the note already names more closely, unless
- * that member is unticked. Two names are folded into one only when they differ only in
+ * lost; so is an alias (a second name for a member the note already names more closely),
+ * in place, with the member's path and no mirrored tag of its own, unless that member is
+ * unticked. Two names are folded into one only when they differ only in
  * case and reach the same member (or nobody), never because they merely look alike, and
  * the same name is never written twice. Names the note already has keep its order; newly
  * ticked members follow, in roster order. The tags list is edited in place, so the student's
@@ -277,12 +295,12 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
       const paths: string[] = []
       // Mirrored tags follow the roster's name, so they stay the same whatever the spelling.
       const tagNames: string[] = []
-      const push = (name: string, path: string, tag: string) => {
+      const push = (name: string, path: string, tag: string | null) => {
         // Exactly the same name twice would read back as one member, so the first wins.
         if (names.includes(name)) return
         names.push(name)
         paths.push(path)
-        tagNames.push(tag)
+        if (tag !== null) tagNames.push(tag)
       }
       const ofKind = members.filter((m) => m.kind === kind)
       const spelledBy = new Map<string, Member>()
@@ -291,9 +309,11 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
         if (spelling !== undefined) spelledBy.set(spelling, m)
       }
       // 1. The names the note already has, in its own order. A member it names keeps the
-      // note's spelling, with the roster's path; an unknown name keeps an empty path. A
-      // member unticked now goes, and so does any other name that reaches it, or the
-      // next read would tick it again.
+      // note's spelling, with the roster's path; an alias (another spelling of a member
+      // the note names) keeps its own spelling and also takes the member's path, but no
+      // tag of its own, since the member's tag covers it; an unknown name keeps an empty
+      // path. A member unticked now goes, and so does every alias of it, or the next read
+      // would tick it again.
       for (const name of noteNames) {
         const member = spelledBy.get(name)
         if (member) {
@@ -301,7 +321,10 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
           continue
         }
         const reaches = findMember(members, kind, name)
-        if (reaches && !ids.includes(reaches.id)) continue
+        if (reaches) {
+          if (ids.includes(reaches.id)) push(name, toForwardSlashes(reaches.path), null)
+          continue
+        }
         push(name, '', name)
       }
       // 2. Members ticked now that the note did not name yet, in roster order, under the

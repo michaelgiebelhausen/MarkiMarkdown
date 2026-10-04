@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applyTicks, readTicks, type ApplyOptions } from '@shared/ticks'
+import { applyTicks, namedCount, readTicks, type ApplyOptions } from '@shared/ticks'
 import { parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
 import type { Member } from '@shared/types'
 
@@ -150,13 +150,29 @@ describe('readTicks', () => {
     expect(r.spellings).toEqual({ s9: 'Study Coach' })
   })
 
-  test('the closest of several names for one member is its spelling; a different one is kept as unknown', () => {
+  test('the closest of several names for one member is its spelling; another is a silent alias, kept in place', () => {
     const roster: Member[] = [...members, { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }]
     const r = readTicks('---\nskills: [Study Coach, study-coach]\n---\n', roster)
     expect(r.skillIds).toEqual(['s9'])
     expect(r.spellings).toEqual({ s9: 'study-coach' })
     expect(r.skillNames).toEqual(['Study Coach', 'study-coach'])
-    expect(r.unknown).toEqual([{ name: 'Study Coach', kind: 'skill' }])
+    expect(r.unknown).toEqual([])
+    expect(namedCount(r)).toBe(1)
+  })
+
+  test('an alias repeated in another case is kept once', () => {
+    const roster: Member[] = [...members, { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }]
+    const r = readTicks('---\nskills: [Study Coach, study-coach, STUDY COACH]\n---\n', roster)
+    expect(r.skillNames).toEqual(['Study Coach', 'study-coach'])
+    expect(r.unknown).toEqual([])
+  })
+
+  test('namedCount counts each member once, and names nobody has, but not aliases', () => {
+    const roster: Member[] = [...members, { id: 'd9', kind: 'domain', name: 'Cell Biology', emoji: '🧪', path: '/x' }]
+    const r = readTicks('---\nskills: [writer, ghost]\ndomains: [cell-biology, Cell Biology, Chemistry]\n---\n', roster)
+    expect(namedCount(r)).toBe(4)
+    expect(namedCount(r, 'skill')).toBe(2)
+    expect(namedCount(r, 'domain')).toBe(2)
   })
 
   test('keeps unknown names apart unless they differ only in case', () => {
@@ -480,6 +496,37 @@ describe('applyTicks', () => {
     expect(d.tags).toEqual(['skill/study-coach', 'domain/cell-biology'])
   })
 
+  describe('another spelling of a ticked member', () => {
+    const roster: Member[] = [
+      ...members,
+      { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }
+    ]
+    const raw = '---\nskills: [Study Coach, writer, study-coach]\n---\n'
+
+    test('keeps its place and spelling, takes the member path, and adds no tag of its own', () => {
+      const d = data(applyTicks(raw, { skillIds: ['s9', 's1', 's2'], domainIds: [] }, roster, opts))
+      expect(d.skills).toEqual(['Study Coach', 'writer', 'study-coach', 'editor'])
+      expect(d.skill_paths).toEqual(['/me/skills/study-coach', 'C:/me/skills/writer', '/me/skills/study-coach', '/me/skills/editor'])
+      expect(d.tags).toEqual(['skill/writer', 'skill/study-coach', 'skill/editor'])
+    })
+
+    test('goes with the member when the member is unticked', () => {
+      const out = applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, roster, opts)
+      expect(data(out).skills).toEqual(['writer'])
+      expect(readTicks(out, roster).skillIds).toEqual(['s1'])
+    })
+
+    test('applying the same ticks twice gives identical bytes, and reads back the same', () => {
+      const ticks = readTicks(raw, roster)
+      const once = applyTicks(raw, ticks, roster, opts) as string
+      expect(applyTicks(once, ticks, roster, opts)).toBe(once)
+      const again = readTicks(once, roster)
+      expect(again.skillIds).toEqual(ticks.skillIds)
+      expect(again.skillNames).toEqual(['Study Coach', 'writer', 'study-coach'])
+      expect(again.unknown).toEqual([])
+    })
+  })
+
   test('an unrelated tick does not respell a name, and a new tick uses the roster name', () => {
     const roster: Member[] = [
       ...members,
@@ -543,20 +590,31 @@ describe('applyTicks', () => {
     ]
     const raw = '---\ndomains: [cell-biology, Cell Biology]\ndomain_paths: [/d/cell-biology, /d/Cell Biology]\n---\n'
 
-    test('the exact name is the spelling, and the other is kept as an unknown name', () => {
+    test('the exact name is the spelling, and the other is a silent alias, with no chip', () => {
       const r = readTicks(raw, roster)
       expect(r.domainIds).toEqual(['d2'])
       expect(r.spellings).toEqual({ d2: 'Cell Biology' })
       expect(r.domainNames).toEqual(['cell-biology', 'Cell Biology'])
-      expect(r.unknown).toEqual([{ name: 'cell-biology', kind: 'domain' }])
+      expect(r.unknown).toEqual([])
     })
 
-    test('ticking a skill keeps Cell Biology with its path, and cell-biology with an empty one', () => {
+    test('ticking a skill keeps both names in place, each with the member path, and one tag', () => {
       const out = applyTicks(raw, { skillIds: ['s1'], domainIds: readTicks(raw, roster).domainIds }, roster, opts)
       const d = data(out)
       expect(d.domains).toEqual(['cell-biology', 'Cell Biology'])
-      expect(d.domain_paths).toEqual(['', '/d/Cell Biology'])
-      expect(readTicks(out, roster).domainIds).toEqual(['d2'])
+      expect(d.domain_paths).toEqual(['/d/Cell Biology', '/d/Cell Biology'])
+      expect(d.tags).toEqual(['skill/writer', 'domain/cell-biology'])
+      const again = readTicks(out, roster)
+      expect(again.domainIds).toEqual(['d2'])
+      expect(again.unknown).toEqual([])
+    })
+
+    test('round trip: reading back and writing again changes nothing', () => {
+      const ticks = { skillIds: ['s1'], domainIds: ['d2'] }
+      const once = applyTicks(raw, ticks, roster, opts) as string
+      expect(applyTicks(once, ticks, roster, opts)).toBe(once)
+      expect(applyTicks(once, readTicks(once, roster), roster, opts)).toBe(once)
+      expect(readTicks(once, roster).domainNames).toEqual(['cell-biology', 'Cell Biology'])
     })
 
     test('unticking Cell Biology takes both names, so it stays unticked', () => {
