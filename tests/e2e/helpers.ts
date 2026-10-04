@@ -1,5 +1,5 @@
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,7 +16,12 @@ export interface Harness extends Dirs {
   app: ElectronApplication
   page: Page
   errors: string[]
-  close: () => Promise<void>
+  /**
+   * Quits the app. Closing a window that still has unsaved changes (or a save under way)
+   * asks first; that fails the test unless it passes `expectUnsaved: true`, so a note left
+   * dirty by accident is caught. Calling it again does nothing.
+   */
+  close: (options?: { expectUnsaved?: boolean }) => Promise<void>
 }
 
 /** Creates a throwaway home for one test run. */
@@ -63,25 +68,47 @@ export async function launch(
   })
   await page.waitForSelector('.app', { timeout: 30000 })
 
+  let closed = false
   return {
     ...dirs,
     app,
     page,
     errors,
-    close: async () => {
-      // A note left unsaved would ask "Save changes?" on the way out: answer Don't save.
+    close: async (closeOptions = {}) => {
+      if (closed) return
+      closed = true
+      // A note left unsaved asks "Save changes?" on the way out: answer Don't save (or
+      // Close, for a window that stopped responding), and leave a mark on disk, since the
+      // app is gone by the time anyone could ask it.
+      const marker = join(dirs.root, 'asked-on-close.txt')
       try {
-        await app.evaluate(({ dialog }) => {
-          dialog.showMessageBoxSync = (() => 1) as typeof dialog.showMessageBoxSync
-        })
+        // A save whose toast a test has just seen is still finishing: give it a moment to
+        // tell the main process it is done, so only a save still under way counts.
+        await page.waitForTimeout(150)
+        await app.evaluate(({ dialog }, file) => {
+          const fs = process.getBuiltinModule('node:fs') as typeof import('node:fs')
+          dialog.showMessageBoxSync = ((...args: unknown[]) => {
+            const options = args[args.length - 1] as { message?: string; buttons?: string[] }
+            fs.appendFileSync(file, `${options.message ?? ''}\n`, 'utf8')
+            const buttons = options.buttons ?? []
+            const leave = buttons.findIndex((b) => b === "Don't save" || b === 'Close')
+            return leave >= 0 ? leave : 0
+          }) as typeof dialog.showMessageBoxSync
+        }, marker)
       } catch {
         /* the app may already have gone */
       }
       await app.close()
+      const asked = existsSync(marker)
       try {
         rmSync(dirs.root, { recursive: true, force: true })
       } catch {
         /* Windows can hold a handle briefly; the temp dir is disposable anyway */
+      }
+      if (asked && !closeOptions.expectUnsaved) {
+        throw new Error(
+          'Closing the app asked about unsaved changes. Finish (or wait for) the save, or call close({ expectUnsaved: true }) if the test means to leave the note unsaved.'
+        )
       }
     }
   }

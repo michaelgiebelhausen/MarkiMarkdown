@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, team, type Harness } from './helpers'
 
@@ -104,6 +104,7 @@ test('Save As writes the new file and the note lives there; a failed one says so
   await expect(h.page.locator('.chip-name')).toHaveText('copy.md')
   await expect(h.page.locator('.chip-dot')).toHaveCount(1)
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a save whose write finished after another note was opened says it was saved, and still archives', async () => {
@@ -296,6 +297,7 @@ test('a failed autosave says so once, and keeps the text', async () => {
   await expect(h.page.locator('.cm-content')).toContainText('Unsaved two.')
   expect(readFileSync(notePath, 'utf8')).toBe('# Essay\n\nFirst draft.\n')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a save queued during a save is dropped when another note is opened meanwhile', async () => {
@@ -359,4 +361,115 @@ test('typing during a "Save first" before opening another note asks again instea
   expect(saved).toContain('Keep this.')
   expect(saved).toContain('And this.')
   expect(h.errors).toEqual([])
+})
+
+const tickAndArchive = async () => {
+  await pane().getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true }).click()
+  await pane().getByRole('checkbox', { name: /Archive \/ distribute/ }).check()
+}
+
+test('closing with Save when the archive copy fails keeps the window open and says so', async () => {
+  const { dirs, notePath } = await openNote({ autosave: false })
+  await tickAndArchive()
+  const first = await secondWindow()
+  await typeAtEnd(' Words to keep.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  rmSync(dirs.raw, { recursive: true, force: true })
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(0) // Save
+  await closeWindow(first)
+  await expect(toasts().filter({ hasText: 'Saved, but not archived' })).toHaveCount(1, { timeout: 20000 })
+  await expect(toasts().filter({ hasText: 'so the window stayed open' })).toHaveCount(1)
+  await h.page.waitForTimeout(1000)
+  expect(await isOpen(first)).toBe(true)
+  expect(readFileSync(notePath, 'utf8')).toContain('Words to keep.')
+  expect(await asked()).toBe(1)
+
+  // The note itself is saved, so closing again just closes.
+  await answerSaveChanges(2)
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(await asked()).toBe(0)
+})
+
+test('closing while the archive copy is still being written asks first', async () => {
+  const { dirs } = await openNote({ autosave: false })
+  await tickAndArchive()
+  // archive:write writes its copy straight away but does not answer until releaseArchive.
+  await h.app.evaluate(({ ipcMain }) => {
+    const fs = process.getBuiltinModule('node:fs') as typeof import('node:fs')
+    const path = process.getBuiltinModule('node:path') as typeof import('node:path')
+    const g = globalThis as unknown as { releaseArchive?: () => void }
+    delete g.releaseArchive
+    ipcMain.removeHandler('archive:write')
+    ipcMain.handle('archive:write', (_e, rawDir: string, _name: string, _date: string, text: string) => {
+      const target = path.join(rawDir, 'essay-held.md')
+      fs.writeFileSync(target, text, 'utf8')
+      return new Promise((resolve) => {
+        g.releaseArchive = () => resolve({ ok: true, path: target })
+      })
+    })
+  })
+  await menu('save')
+  const held = () => h.app.evaluate(() => typeof (globalThis as unknown as { releaseArchive?: () => void }).releaseArchive)
+  await expect.poll(held, { timeout: 10000 }).toBe('function')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(0) // the working file is saved; the copy is not finished
+  const first = await secondWindow()
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(2) // Cancel
+  await closeWindow(first)
+  expect(await asked()).toBe(1)
+  expect(await isOpen(first)).toBe(true)
+
+  await h.app.evaluate(() => (globalThis as unknown as { releaseArchive: () => void }).releaseArchive())
+  await expect(toasts().filter({ hasText: 'Saved and archived to raw.' })).toHaveCount(1, { timeout: 20000 })
+  expect(existsSync(join(dirs.raw, 'essay-held.md'))).toBe(true)
+  await h.page.waitForTimeout(300)
+  await answerSaveChanges(2)
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(await asked()).toBe(0)
+})
+
+test('closing again while it saves before closing neither asks again nor saves twice, and a quit waits for it', async () => {
+  const { notePath } = await openNote({ autosave: false })
+  const first = await secondWindow()
+  await typeAtEnd(' Unsaved words.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(0) // Save
+  await holdFirstSaveReply()
+  await closeWindow(first)
+  await saveIsHeld()
+  await closeWindow(first)
+  expect(await asked()).toBe(1)
+
+  const exited = new Promise<void>((resolve) => h.app.process().once('exit', () => resolve()))
+  await h.app.evaluate(({ app }) => app.quit())
+  expect(await asked()).toBe(1)
+  expect(await saveCalls()).toBe(1)
+  expect(await isOpen(first)).toBe(true)
+
+  await releaseSaveReply()
+  await exited
+  expect(readFileSync(notePath, 'utf8')).toContain('Unsaved words.')
+})
+
+test('a window whose page crashed closes without asking about changes it can no longer save', async () => {
+  await openNote({ autosave: false })
+  const first = await secondWindow()
+  await typeAtEnd(' Lost words.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(2) // Cancel, were it to ask
+  await h.app.evaluate(({ BrowserWindow }, i) => BrowserWindow.fromId(i)?.webContents.forcefullyCrashRenderer(), first)
+  const crashed = () => h.app.evaluate(({ BrowserWindow }, i) => BrowserWindow.fromId(i)?.webContents.isCrashed() ?? true, first)
+  await expect.poll(crashed, { timeout: 10000 }).toBe(true)
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(await asked()).toBe(0)
 })

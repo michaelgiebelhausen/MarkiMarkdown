@@ -25,6 +25,7 @@ test('typing markdown on the left renders on the right', async () => {
   await expect(h.page.locator('.pm-content h2')).toHaveText('A heading')
   await expect(h.page.locator('.pm-content strong')).toHaveText('bold')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('editing a word on the right updates the code on the left', async () => {
@@ -41,6 +42,7 @@ test('editing a word on the right updates the code on the left', async () => {
 
   await expect(h.page.locator('.cm-content')).toContainText('Hello world. Added.')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a table survives an edit to a neighbouring paragraph', async () => {
@@ -59,6 +61,7 @@ test('a table survives an edit to a neighbouring paragraph', async () => {
   expect(source).toContain('| --- | --- |')
   expect(source).toContain('Intro line. Edited.')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the pane selector shows and hides panes and remembers the choice', async () => {
@@ -202,6 +205,7 @@ test('a checklist item keeps its box and its words on one line', async () => {
   // one line of 17px text is about 28px tall; two lines would be well over 45
   expect(box!.height).toBeLessThan(42)
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('clicking the box in a checklist ticks it in the markdown', async () => {
@@ -213,4 +217,5 @@ test('clicking the box in a checklist ticks it in the markdown', async () => {
   await h.page.locator('.pm-content li').first().click({ position: { x: 6, y: 10 } })
   await expect(h.page.locator('.cm-content')).toContainText('- [x] Read chapter three')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })

@@ -26,6 +26,7 @@ test('dragging the note onto a bunch chip applies that bunch', async () => {
   await expect(h.page.locator('.cm-content')).toContainText('bunch: study')
   expect(existsSync(join(dirs.raw, 'drag.md'))).toBe(false)
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('Ctrl+B works while the cursor is in the Markdown pane', async () => {
@@ -39,6 +40,7 @@ test('Ctrl+B works while the cursor is in the Markdown pane', async () => {
   await expect(h.page.locator('.cm-content')).toContainText('**Make this bold.**')
   await expect(h.page.locator('.pm-content strong')).toHaveText('Make this bold.')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a note that starts with a divider keeps all of its text', async () => {
@@ -65,6 +67,7 @@ test('a wikilink survives being made bold in the clean pane', async () => {
   expect(source).toContain('[[Working memory]]')
   expect(source).not.toContain('\ufffc')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a note with unreadable properties cannot be given a bunch', async () => {

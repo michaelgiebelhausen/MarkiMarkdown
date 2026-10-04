@@ -124,6 +124,7 @@ test('a missing raw folder blocks archiving and says so', async () => {
   await expect(pane()).toContainText("The raw folder can't be found.")
   await expect(saveButton()).toBeVisible()
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a raw folder that vanishes before Save gives "Saved, but not archived"', async () => {
@@ -267,6 +268,7 @@ test('a 1.1 note opens with its ticks lit, and the first tick moves it to the ne
   await expect(source).toContainText('domain/thesis')
   await expect(source).not.toContainText('agent/librarian')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('archiving a note with no id gives it one, in the working file, the copy and the ledger', async () => {

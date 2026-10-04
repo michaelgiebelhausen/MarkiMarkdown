@@ -210,10 +210,11 @@ export default function App() {
   const saveFlowRef = useRef(saveFlow)
   saveFlowRef.current = saveFlow
 
-  // The window asks before closing over unsaved changes, so it needs to know about them.
+  // The window asks before closing over unsaved changes, so it needs to know about them,
+  // and about a save, an archive copy or a move still under way, which closing would cut short.
   useEffect(() => {
-    window.marki.windows.setDirty(doc.dirty, doc.fileName)
-  }, [doc.dirty, doc.fileName])
+    window.marki.windows.setDirty(doc.dirty || saveFlow.busy, doc.fileName)
+  }, [doc.dirty, saveFlow.busy, doc.fileName])
 
   /**
    * The one way the grid and the chips change the note: rewrite its YAML as one undo step.
@@ -348,7 +349,8 @@ export default function App() {
         if (!answer.ok || answer.index === 2) return false
         if (answer.index === 1) return true
         // The save says why when it fails; the note stays open then.
-        if (!(await saveFlowRef.current.saveAndWait())) return false
+        const outcome = await saveFlowRef.current.saveAndWait()
+        if (!outcome.written || !outcome.stillOpen) return false
       }
       return true
     } catch {
@@ -526,11 +528,35 @@ export default function App() {
         case 'open': return void openFile()
         case 'save': return void saveFlow.save()
         case 'save-as': return void saveFlow.saveAs()
-        // The student chose Save when closing the window: close only once the note is saved.
+        // The student chose Save when closing the window: close only once the note is saved,
+        // and archived if the box was ticked. Otherwise the window stays open with the
+        // warning on screen, and closing it again asks afresh (or just closes, if the note
+        // itself is saved).
         case 'save-then-close': return void (async () => {
-          const saved = await saveFlow.saveAndWait()
-          if (!saved) return
+          let outcome: Awaited<ReturnType<typeof saveFlow.saveAndWait>>
+          try {
+            outcome = await saveFlow.saveAndWait()
+          } catch {
+            window.marki.windows.stayOpen()
+            pushToast({ text: "The note couldn't be saved, so the window stayed open.", tone: 'warn' })
+            return
+          }
+          if (!outcome.written || !outcome.stillOpen) {
+            // The save has already said why.
+            window.marki.windows.stayOpen()
+            return
+          }
+          if (outcome.archived === 'failed') {
+            window.marki.windows.stayOpen()
+            pushToast({
+              text: "Saved, but the archive step didn't finish, so the window stayed open. Close it again to leave anyway.",
+              tone: 'warn',
+              duration: 0
+            })
+            return
+          }
           if (store.state.dirty) {
+            window.marki.windows.stayOpen()
             pushToast({ text: 'Saved. You typed more while it was saving, so the window stayed open.', tone: 'warn' })
             return
           }

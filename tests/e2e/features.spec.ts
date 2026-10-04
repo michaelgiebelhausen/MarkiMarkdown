@@ -26,6 +26,7 @@ test('a plain text file offers conversion and converts on request', async () => 
   // the original .txt is never touched
   expect(readFileSync(notePath, 'utf8')).toContain('\u2022 First point')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the properties panel adds and edits front matter', async () => {
@@ -49,6 +50,7 @@ test('the properties panel adds and edits front matter', async () => {
   await tagInput.press('Enter')
   await expect(h.page.locator('.cm-content')).toContainText('week3')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('broken front matter shows a calm message instead of crashing', async () => {
@@ -64,6 +66,7 @@ test('broken front matter shows a calm message instead of crashing', async () =>
   await expect(h.page.locator('.props-broken')).toHaveCount(0)
   await expect(h.page.locator('.props-summary')).toBeVisible()
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the top bar shows the note name and whether it has been archived', async () => {

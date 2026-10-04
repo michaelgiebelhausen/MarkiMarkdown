@@ -52,6 +52,7 @@ test('ticking the grid keeps the fold and updates the summary', async () => {
   await expect(h.page.locator('.cm-yaml-summary')).toContainText('1 skill · 1 domain · 3 tags')
   await expect(source()).not.toContainText('domains:')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('broken YAML is never folded, and is marked', async () => {

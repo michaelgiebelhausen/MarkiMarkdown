@@ -56,16 +56,38 @@ function safeBounds(): { width: number; height: number; x?: number; y?: number }
 /* ------------------------------------------------------------------ *
  * Never close a window over unsaved changes without asking
  * ------------------------------------------------------------------ */
-/** Windows whose note has unsaved changes, by window id, with the note's name. */
+/** Windows whose note has unsaved changes (or a save still under way), by window id, with the note's name. */
 const unsaved = new Map<number, string>()
 /** Windows whose note was saved after the student chose Save on closing. */
 const closeApproved = new Set<number>()
-/** Windows saving before they close, and whether a quit was waiting for them. */
+/**
+ * Windows saving before they close (the student chose Save), and whether a quit is waiting
+ * for them. Closing such a window again neither asks again nor starts a second save.
+ */
 const quitAfterSave = new Map<number, boolean>()
+/** Windows whose page has stopped responding: they can't save, so closing only offers Close. */
+const unresponsive = new Set<number>()
+
+/**
+ * A quit is under way. Quitting closes every window in one go, so this stays true until
+ * every window has had its say, and only then goes back to false if one of them kept the
+ * quit from finishing.
+ */
 let quitting = false
+/** The student pressed Cancel during this quit: the other windows stay open without asking. */
+let quitCancelled = false
 app.on('before-quit', () => {
   quitting = true
+  quitCancelled = false
 })
+
+/** A window kept this quit from finishing: once the other windows have heard it, it is over. */
+function quitHeldUp(): void {
+  setImmediate(() => {
+    quitting = false
+    quitCancelled = false
+  })
+}
 
 const SAVE = 0
 const DONT_SAVE = 1
@@ -88,6 +110,25 @@ function askToSave(win: BrowserWindow, name: string): number {
   }
 }
 
+const CLOSE_STUCK = 0
+
+/** The page has crashed or stopped responding, so it can't save: Close or Cancel. */
+function askToCloseStuck(win: BrowserWindow, name: string): number {
+  try {
+    return dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Close', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'This window has stopped responding.',
+      detail: `Changes to ${name} that weren't saved can't be saved now. Close the window anyway, or Cancel to give it a moment.`
+    })
+  } catch (error) {
+    log.warn('Could not ask about closing a window that stopped responding', error)
+    return 1
+  }
+}
+
 ipcMain.on('window:set-dirty', (event, dirty: unknown, name: unknown) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win) return
@@ -103,6 +144,13 @@ ipcMain.on('window:close-now', (event) => {
   closeApproved.add(win.id)
   win.close()
   if (resumeQuit) app.quit()
+})
+
+// The save chosen on closing didn't go through (or its archive copy didn't): the window
+// stays open, any quit that waited for it is off, and the next close asks afresh.
+ipcMain.on('window:stay-open', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) quitAfterSave.delete(win.id)
 })
 
 export function createWindow(openPath?: string): BrowserWindow {
@@ -126,23 +174,59 @@ export function createWindow(openPath?: string): BrowserWindow {
   win.once('ready-to-show', () => win.show())
 
   const id = win.id
-  win.on('close', (event) => {
+  /** True when the window may close now; otherwise it has asked, or is saving first. */
+  const mayClose = (): boolean => {
+    if (closeApproved.has(id)) return true
+    const duringQuit = quitting
+    const saving = quitAfterSave.has(id)
+    const note = unsaved.get(id)
+    if (!saving && !note) return true
+    const stuck = win.webContents.isCrashed() || unresponsive.has(id)
+
+    // A page that has stopped can't save: offer only Close or Cancel.
+    if (stuck) {
+      if (duringQuit && quitCancelled) return false
+      if (askToCloseStuck(win, note ?? 'this note') === CLOSE_STUCK) return true
+      if (duringQuit) {
+        quitCancelled = true
+        quitHeldUp()
+      }
+      return false
+    }
+
+    // Already saving because the student chose Save: wait for that save rather than
+    // asking again or saving twice. A quit asked for meanwhile carries on once it is done.
+    if (saving) {
+      if (duringQuit) {
+        quitAfterSave.set(id, true)
+        quitHeldUp()
+      }
+      return false
+    }
+
+    // The student already pressed Cancel on this quit for another window.
+    if (duringQuit && quitCancelled) return false
+
     // Unsaved changes: ask first. Save hands the save to the window, which closes it again
     // through window:close-now once the note is saved; a failed save leaves it open.
-    const note = unsaved.get(id)
-    if (note && !closeApproved.has(id)) {
-      const answer = askToSave(win, note)
-      if (answer !== DONT_SAVE) {
-        event.preventDefault()
-        // A quit waits for this window: carry on with it only once the note is saved.
-        const resumeQuit = quitting
-        quitting = false
-        if (answer === SAVE) {
-          quitAfterSave.set(id, resumeQuit)
-          win.webContents.send('menu:action', 'save-then-close')
-        }
-        return
-      }
+    const answer = askToSave(win, note ?? 'this note')
+    if (answer === DONT_SAVE) return true
+    if (duringQuit) {
+      if (answer === CANCEL) quitCancelled = true
+      quitHeldUp()
+    }
+    if (answer === SAVE) {
+      // A quit waits for this window: carry on with it only once the note is saved.
+      quitAfterSave.set(id, duringQuit)
+      win.webContents.send('menu:action', 'save-then-close')
+    }
+    return false
+  }
+
+  win.on('close', (event) => {
+    if (!mayClose()) {
+      event.preventDefault()
+      return
     }
     const [width, height] = win.getSize()
     const [x, y] = win.getPosition()
@@ -150,10 +234,25 @@ export function createWindow(openPath?: string): BrowserWindow {
     writeSettings({ windowBounds: { width, height, x, y } } as never)
   })
 
+  win.on('unresponsive', () => unresponsive.add(id))
+  win.on('responsive', () => unresponsive.delete(id))
+
+  // The page has gone (crashed or killed): whatever it had not saved went with it, and it
+  // can no longer answer a save, so closing must not ask about it or wait for it.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (unsaved.has(id) || quitAfterSave.has(id)) {
+      log.error(`A window's page stopped (${details.reason}) with changes that weren't saved: ${unsaved.get(id) ?? 'this note'}`)
+    }
+    unsaved.delete(id)
+    quitAfterSave.delete(id)
+    unresponsive.delete(id)
+  })
+
   win.on('closed', () => {
     unsaved.delete(id)
     closeApproved.delete(id)
     quitAfterSave.delete(id)
+    unresponsive.delete(id)
   })
 
   // Spelling suggestions, and never a browser context menu

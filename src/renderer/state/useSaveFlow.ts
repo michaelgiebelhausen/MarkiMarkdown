@@ -29,6 +29,24 @@ export interface SaveFlowInput {
   pushToast: (toast: Omit<ToastMessage, 'id'>) => void
 }
 
+/** What became of the archive copy a save was asked to make. */
+export type ArchiveOutcome = 'not-wanted' | 'done' | 'failed'
+
+/** What one save did, for a caller that acts on it (Save first, before opening another note or closing). */
+export interface SaveOutcome {
+  /** The working file now holds the text this save read. */
+  written: boolean
+  /** The note that was saved is still the one open. */
+  stillOpen: boolean
+  /**
+   * Whether the archive box was ticked and the copy and its ledger entry were made.
+   * 'not-wanted' when nothing was written, since no archive step ran.
+   */
+  archived: ArchiveOutcome
+  /** Why the archive step didn't finish, when it failed. */
+  reason?: string
+}
+
 export interface SaveFlow {
   /** Folder of the working file, or the folder chosen for an untitled note, or empty. */
   workingDir: string
@@ -55,10 +73,10 @@ export interface SaveFlow {
    */
   save: () => Promise<void>
   /**
-   * Waits for whatever is running, then saves. True only when the working file now holds
-   * the note's text and the same note is still open (for "Save first" before an open or a close).
+   * Waits for whatever is running, then saves, and says what the save did (for "Save first"
+   * before an open or a close). It went through when `written` and `stillOpen` are both true.
    */
-  saveAndWait: () => Promise<boolean>
+  saveAndWait: () => Promise<SaveOutcome>
   /** Save As: a new file the student names. Shares the same guard, and queues like Save. */
   saveAs: () => Promise<void>
   /** The quiet autosave. Shares the one-at-a-time guard, so it never races a save or a move. */
@@ -73,6 +91,8 @@ const RAW_FAILED = "The raw folder couldn't be changed."
 const SAVE_STOPPED = 'Another note was opened, so this save stopped. Save again.'
 const MOVE_STOPPED = 'Another note was opened, so the note was not moved. Choose the folder again.'
 const RAW_STOPPED = 'Another note was opened, so the raw folder was not changed.'
+const LEDGER_NOT_SAVED = "The archive copy was made, but the archive counts couldn't be updated."
+const SOMETHING_WRONG = 'something went wrong.'
 /** The write went through, but by then the student had opened a different note. */
 const savedElsewhere = (name: string) => `Saved ${name}. Another note is open now.`
 
@@ -80,6 +100,13 @@ const savedElsewhere = (name: string) => `Saved ${name}. Another note is open no
 const clause = (message: string) => message.trim().replace(/\.$/, '')
 
 type Job = 'user' | 'auto'
+
+/** How far one save got, so a failure part-way can still say what was done. */
+interface SaveProgress {
+  written: boolean
+  archiving: boolean
+  generation: number
+}
 
 /** A Save or Save As pressed while another job ran, and the note (by load generation) it was pressed on. */
 interface FollowUp {
@@ -191,17 +218,20 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   }
 
   /**
-   * True when the working file now holds the text and the note is still the one open.
-   * Once the write has gone through, the archive copy and the ledger still follow even if
-   * another note was opened meanwhile (neither touches the store); only the store is left
-   * alone then.
+   * Says whether the working file now holds the text, whether the note is still the one
+   * open, and what became of the archive copy. Once the write has gone through, the archive
+   * copy and the ledger still follow even if another note was opened meanwhile (neither
+   * touches the store); only the store is left alone then.
    */
-  const runSave = async (progress: { written: boolean }): Promise<boolean> => {
+  const runSave = async (progress: SaveProgress): Promise<SaveOutcome> => {
     // Decided once, at the click: the text written to the working file and copied to the
     // archive, the ticks the ledger records, and whether to archive at all. Typing during
     // the save, or unticking the box, counts for the next save, not this one.
     const generation = store.loadGeneration
     const archiving = archive
+    progress.generation = generation
+    progress.archiving = archiving
+    const notWritten = (): SaveOutcome => ({ written: false, stillOpen: sameNote(generation), archived: 'not-wanted' })
     // An archived note needs an id, so the copy and the ledger can be traced back to it.
     // A 1.1 note or a hand-typed one may have none: give it one now, as its own undo step,
     // so the working file and the copy both carry it.
@@ -221,10 +251,10 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       let dir = workingDir
       if (!dir) {
         const picked = await window.marki.dialogs.pickFolder()
-        if (!picked.ok) return false
+        if (!picked.ok) return notWritten()
         if (!sameNote(generation)) {
           pushToast({ text: SAVE_STOPPED, tone: 'warn' })
-          return false
+          return notWritten()
         }
         dir = picked.path
         setPendingDir(dir)
@@ -233,7 +263,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       const written = await window.marki.files.writeNew(dir, name, text)
       if (!written.ok) {
         pushToast({ text: written.message, tone: 'warn' })
-        return false
+        return notWritten()
       }
       path = written.path
       const savedPath = written.path
@@ -260,7 +290,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       const saved = await window.marki.files.saveAll([path], text)
       if (!saved.ok) {
         pushToast({ text: saved.failures[0]?.message ?? SAVE_FAILED, tone: 'warn' })
-        return false
+        return notWritten()
       }
       if (sameNote(generation)) store.markSaved(text)
       else pushToast({ text: savedElsewhere(baseName(path) || fileName) })
@@ -268,7 +298,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     progress.written = true
     savedOk()
     const stillOpen = sameNote(generation)
-    if (!archiving) return stillOpen
+    if (!archiving) return { written: true, stillOpen, archived: 'not-wanted' }
+    const notArchived = (reason: string): SaveOutcome => ({ written: true, stillOpen, archived: 'failed', reason })
 
     // 2. the archive copy, checked again against where the note now lives
     const now = planSave({
@@ -280,7 +311,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     })
     if (!now.canArchive) {
       pushToast({ text: `Saved, but not archived: ${now.reason}`, tone: 'warn' })
-      return stillOpen
+      return notArchived(now.reason)
     }
     // One moment for the file name, the archived: stamp and the ledger, so a save at
     // midnight can't name the copy one day and stamp it the next.
@@ -289,13 +320,13 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     const copyText = addArchived(text, archivedAt)
     if (copyText === null) {
       pushToast({ text: `Saved, but not archived: ${BLOCK_REASONS.yaml}`, tone: 'warn' })
-      return stillOpen
+      return notArchived(BLOCK_REASONS.yaml)
     }
     const copyName = baseName(path) || fileName
     const copy = await window.marki.archive.write(rawPath, copyName, localDate(at), copyText)
     if (!copy.ok) {
       pushToast({ text: `Saved, but not archived: ${copy.message}`, tone: 'warn', duration: 10000 })
-      return stillOpen
+      return notArchived(copy.message)
     }
 
     // 3. the ledger, which feeds the grid counts. The copy now exists, so it is recorded
@@ -311,7 +342,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     const appended = await window.marki.ledger.append(entry)
     // An append that was not saved may hand back an empty or stale list: keep the counts
     // already on screen rather than wiping them.
-    if (appended.ok && appended.saved) input.onLedger(appended.entries)
+    const recorded = appended.ok && appended.saved
+    if (recorded) input.onLedger(appended.entries)
     else input.onLedgerNotSaved()
 
     // The box belongs to whichever note is open now: only untick it for this one.
@@ -321,19 +353,24 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       actionLabel: 'Show',
       onAction: () => void window.marki.shell.showItem(copy.path)
     })
-    return stillOpen
+    return recorded ? { written: true, stillOpen, archived: 'done' } : notArchived(LEDGER_NOT_SAVED)
   }
 
-  /** Runs one save inside the guard (already held) and says whether it went through. */
-  const guardedSave = async (): Promise<boolean> => {
-    const progress = { written: false }
+  /** Runs one save inside the guard (already held) and says what it did. */
+  const guardedSave = async (): Promise<SaveOutcome> => {
+    const progress: SaveProgress = { written: false, archiving: false, generation: store.loadGeneration }
     try {
       return await runSave(progress)
     } catch {
       // A rejected IPC call must never leave the student thinking the note was saved,
       // nor thinking it was lost when only the archive step failed.
-      pushToast({ text: progress.written ? 'Saved, but not archived: something went wrong.' : SAVE_FAILED, tone: 'warn' })
-      return false
+      pushToast({ text: progress.written ? `Saved, but not archived: ${SOMETHING_WRONG}` : SAVE_FAILED, tone: 'warn' })
+      return {
+        written: progress.written,
+        stillOpen: sameNote(progress.generation),
+        archived: progress.written && progress.archiving ? 'failed' : 'not-wanted',
+        reason: progress.written && progress.archiving ? SOMETHING_WRONG : undefined
+      }
     }
   }
 
@@ -383,16 +420,16 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followUpTurn])
 
-  const saveAndWait = async (): Promise<boolean> => {
+  const saveAndWait = async (): Promise<SaveOutcome> => {
     while (running.current) await running.current.done
-    let saved = false
+    let outcome: SaveOutcome = { written: false, stillOpen: false, archived: 'not-wanted' }
     await exclusive('user', async () => {
       // This save covers a Save already queued for the same note.
       const generation = store.loadGeneration
       followUps.current = followUps.current.filter((f) => f.kind !== 'save' || f.generation !== generation)
-      saved = await guardedSave()
+      outcome = await guardedSave()
     })
-    return saved
+    return outcome
   }
 
   const runSaveAs = async () => {

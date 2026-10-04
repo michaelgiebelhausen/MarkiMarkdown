@@ -41,4 +41,5 @@ test('a long note opens and stays responsive while typing', async () => {
 
   expect(elapsed).toBeLessThan(6000)
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })

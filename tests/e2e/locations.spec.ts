@@ -61,6 +61,7 @@ test('clicking a name ticks just that skill or domain', async () => {
   await expect(source()).toContainText('domains:')
   await expect(source()).not.toContainText('skills:')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('typing the YAML by hand lights up the grid', async () => {
@@ -83,6 +84,7 @@ test('a bunch chip applies its skills and domains, and clicking it again clears 
   await expect(source()).not.toContainText('bunch:')
   await expect(source()).toContainText('skills:')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a name nobody has offers to add it', async () => {
@@ -188,6 +190,7 @@ test('clicking a square whose skill and domain are both ticked unticks both', as
   await expect(source()).not.toContainText('skills:')
   await expect(source()).not.toContainText('domains:')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('Save as bunch starts from the skills and domains ticked now', async () => {
@@ -211,6 +214,7 @@ test('two clicks in a row both land, even before the grid redraws', async () => 
   await expect(source()).toContainText('- librarian')
   await expect(source()).toContainText('- thesis')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('Ctrl+Shift+1 applies the first bunch, but not while a dialog is open', async () => {
@@ -226,6 +230,7 @@ test('Ctrl+Shift+1 applies the first bunch, but not while a dialog is open', asy
   await h.page.keyboard.press('Control+Shift+Digit1')
   await expect(source()).toContainText('bunch: study')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('a skill or domain whose folder is missing is flagged in the grid', async () => {

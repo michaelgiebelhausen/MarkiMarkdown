@@ -40,6 +40,7 @@ test('the bubble makes text bold and the markdown shows it', async () => {
   await h.page.locator('.bubble-btn[title="Bold"]').click()
   await expect(h.page.locator('.cm-content')).toContainText('**Make me bold.**')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the bubble turns a paragraph into a heading', async () => {
@@ -49,6 +50,7 @@ test('the bubble turns a paragraph into a heading', async () => {
   await expect(h.page.locator('.cm-content')).toContainText('## Turn me into a heading.')
   await expect(h.page.locator('.pm-content h2')).toBeVisible()
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the bubble turns a paragraph into a checklist', async () => {
@@ -57,6 +59,7 @@ test('the bubble turns a paragraph into a checklist', async () => {
   await h.page.locator('.bubble-btn[title="Checklist"]').click()
   await expect(h.page.locator('.cm-content')).toContainText('- [ ] Make me a task.')
   expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
 })
 
 test('the bubble shows which formatting is already applied', async () => {
