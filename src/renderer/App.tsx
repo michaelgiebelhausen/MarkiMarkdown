@@ -18,11 +18,11 @@ import { TopBar } from './ui/TopBar'
 import { PaneLayout } from './layout/PaneLayout'
 import { togglePane, type PaneKey } from './layout/paneMath'
 import { ToastStack, type ToastMessage } from './ui/Toast'
-import { baseName, samePath } from '@shared/paths'
+import { samePath } from '@shared/paths'
 import { parseFrontMatter, mergeFrontMatter } from '@shared/markdown/frontmatter'
 import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtToMd'
 import { tidyMarkdown } from '@shared/markdown/tidy'
-import { archiveCount } from '@shared/ledger'
+import { archiveCount, noteIdOf } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
 import { applyTicks, readTicks, type TickReading, type Ticks } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
@@ -159,7 +159,7 @@ export default function App() {
     return parseFrontMatter(doc.frontMatterRaw)
   }, [doc.frontMatterRaw])
 
-  const noteId = frontMatter.ok && typeof frontMatter.data.id === 'string' ? frontMatter.data.id : ''
+  const noteId = frontMatter.ok ? noteIdOf(frontMatter.data.id) : ''
 
   const ticks = useMemo(() => readTicks(doc.frontMatterRaw, members), [doc.frontMatterRaw, members])
 
@@ -491,18 +491,7 @@ export default function App() {
       switch (action) {
         case 'open': return void openFile()
         case 'save': return void saveFlow.save()
-        case 'save-as': return void (async () => {
-          const generation = store.loadGeneration
-          const text = store.fullText()
-          const result = await window.marki.files.saveAs(doc.fileName, text)
-          if (!result.ok) return
-          // Only the text written counts as saved, and only the note it came from moves.
-          if (store.loadGeneration === generation) {
-            store.afterFiling([result.path], { written: text })
-            store.setFileName(baseName(result.path) || doc.fileName)
-          }
-          pushToast({ text: 'Saved.' })
-        })()
+        case 'save-as': return void saveFlow.saveAs()
         case 'undo': return store.undo()
         case 'redo': return store.redo()
         // Formatting has to work in whichever pane the student is actually in.

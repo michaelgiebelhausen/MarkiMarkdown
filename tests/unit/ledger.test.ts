@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'vitest'
-import { archiveCount, isLegacyLedger, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
+import { archiveCount, isLegacyLedger, noteIdOf, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
+import { parseFrontMatter } from '@shared/markdown/frontmatter'
 import type { LedgerEntry } from '@shared/types'
+
+describe('noteIdOf', () => {
+  test('reads a text id, and a number id as its digits', () => {
+    expect(noteIdOf('01ABC')).toBe('01ABC')
+    const parsed = parseFrontMatter('---\nid: 20261004\n---\n')
+    expect(parsed.ok && noteIdOf(parsed.data.id)).toBe('20261004')
+  })
+
+  test('anything else is no id', () => {
+    for (const value of [undefined, null, true, [], {}]) expect(noteIdOf(value)).toBe('')
+  })
+})
 
 const entries: LedgerEntry[] = [
   { noteId: 'n1', bunchId: 'b1', skillIds: ['a1', 'a2'], domainIds: ['x1'], archivedAt: '2026-09-13T10:00:00+00:00' },

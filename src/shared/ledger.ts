@@ -1,5 +1,15 @@
 import type { LedgerEntry } from './types'
 
+/**
+ * The note id the ledger records for a front matter `id`: the text, or a number's digits
+ * (a hand-typed id: 20261004 reads as a number), else empty.
+ */
+export function noteIdOf(id: unknown): string {
+  if (typeof id === 'string') return id
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id)
+  return ''
+}
+
 /** Member ids must not contain `|`, or two distinct pairs could collide on the same key. */
 export function pairKey(skillId: string, domainId: string): string {
   return `${skillId}|${domainId}`

@@ -223,24 +223,29 @@ export class DocumentStore {
     const previous = this.past.pop()
     if (!previous) return
     this.future.push(this.state)
-    this.state = {
-      ...previous,
-      owner: this.state.owner,
-      version: this.state.version + 1,
-      dirty: (previous.frontMatterRaw ?? '') + previous.body !== this.savedText
-    }
-    this.emit()
+    this.restoreText(previous)
   }
 
   redo(): void {
     const next = this.future.pop()
     if (!next) return
     this.past.push(this.state)
+    this.restoreText(next)
+  }
+
+  /**
+   * Undo and redo bring back the text only. Where the note lives (its paths, name, origin,
+   * plain-text mode and siblings) always stays as it is now: undoing after a move or a
+   * first save must never point the next save back at a file that is gone.
+   */
+  private restoreText(from: DocState): void {
+    const { frontMatterRaw, body } = from
     this.state = {
-      ...next,
-      owner: this.state.owner,
+      ...this.state,
+      frontMatterRaw,
+      body,
       version: this.state.version + 1,
-      dirty: (next.frontMatterRaw ?? '') + next.body !== this.savedText
+      dirty: (frontMatterRaw ?? '') + body !== this.savedText
     }
     this.emit()
   }

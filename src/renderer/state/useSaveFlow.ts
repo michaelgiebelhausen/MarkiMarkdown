@@ -7,6 +7,7 @@ import { ulid } from 'ulid'
 import { addArchived, mergeFrontMatter, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
 import { baseName, dirName, samePath } from '@shared/paths'
 import { localDate, nowLocalIso } from '@shared/time'
+import { noteIdOf } from '@shared/ledger'
 import type { ToastMessage } from '@renderer/ui/Toast'
 import { suggestName } from './naming'
 
@@ -47,7 +48,18 @@ export interface SaveFlow {
   settled: number
   chooseWorkingFolder: () => Promise<void>
   chooseRawFolder: () => Promise<void>
+  /**
+   * Save, Ctrl+S and the Save button. Pressed while another save or a move is running, it
+   * queues one more save that runs once that job has finished.
+   */
   save: () => Promise<void>
+  /**
+   * Waits for whatever is running, then saves. True only when the working file now holds
+   * the note's text and the same note is still open (for "Save first" before an open or a close).
+   */
+  saveAndWait: () => Promise<boolean>
+  /** Save As: a new file the student names. Shares the same guard. */
+  saveAs: () => Promise<void>
   /** The quiet autosave. Shares the one-at-a-time guard, so it never races a save or a move. */
   autosave: () => Promise<void>
   /** A different note was opened: forget the folder choice, untick the box. */
@@ -60,6 +72,11 @@ const RAW_FAILED = "The raw folder couldn't be changed."
 const SAVE_STOPPED = 'Another note was opened, so this save stopped. Save again.'
 const MOVE_STOPPED = 'Another note was opened, so the note was not moved. Choose the folder again.'
 const RAW_STOPPED = 'Another note was opened, so the raw folder was not changed.'
+/** The write went through, but by then the student had opened a different note. */
+const savedElsewhere = (name: string) => `Saved ${name}. Another note is open now.`
+
+/** A file-system message ends with a full stop; this sits inside a longer sentence. */
+const clause = (message: string) => message.trim().replace(/\.$/, '')
 
 type Job = 'user' | 'auto'
 
@@ -72,6 +89,11 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const [busy, setBusy] = useState(false)
   const [settled, setSettled] = useState(0)
   const running = useRef<{ job: Job; done: Promise<void> } | null>(null)
+  /** Save was pressed while another job ran: one more save once it finishes. */
+  const followUpWanted = useRef(false)
+  const [followUps, setFollowUps] = useState(0)
+  /** The note (by load generation) whose failed autosave was already reported. */
+  const autosaveWarned = useRef<number | null>(null)
 
   // A different bunch brings its own raw folder.
   useEffect(() => setRawOverride(null), [activeBunch?.id])
@@ -109,12 +131,16 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
    * One save, move, folder choice or autosave at a time. A move must never run while a
    * save is writing the same file, and a double click must not start a second save over
    * the first. A click that lands while a quiet autosave is writing waits for it, then
-   * goes ahead; anything that lands while a click's job runs is dropped (the buttons are
-   * disabled meanwhile, and that job is already doing the work).
+   * goes ahead; anything else that lands while a click's job runs is dropped (the buttons
+   * are disabled meanwhile, and that job is already doing the work), except Save, which
+   * calls `whenBusy` to queue one more save.
    */
-  const exclusive = async (job: Job, body: () => Promise<boolean | void>): Promise<void> => {
+  const exclusive = async (job: Job, body: () => Promise<boolean | void>, whenBusy?: () => void): Promise<void> => {
     if (job === 'user' && running.current?.job === 'auto') await running.current.done
-    if (running.current) return
+    if (running.current) {
+      whenBusy?.()
+      return
+    }
     let finish = () => {}
     const done = new Promise<void>((resolve) => (finish = resolve))
     running.current = { job, done }
@@ -128,6 +154,11 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       if (job === 'user') setBusy(false)
       // A failed autosave waits for the next keystroke rather than retrying every pause.
       if (job === 'user' || wrote === true) setSettled((n) => n + 1)
+      // Run the queued save from the next render, so it sees everything this job changed.
+      if (followUpWanted.current) {
+        followUpWanted.current = false
+        setFollowUps((n) => n + 1)
+      }
     }
   }
 
@@ -147,7 +178,18 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     store.commitUndoGroup()
   }
 
-  const runSave = async () => {
+  /** A save went through: a later failed autosave of this note is worth reporting again. */
+  const savedOk = () => {
+    autosaveWarned.current = null
+  }
+
+  /**
+   * True when the working file now holds the text and the note is still the one open.
+   * Once the write has gone through, the archive copy and the ledger still follow even if
+   * another note was opened meanwhile (neither touches the store); only the store is left
+   * alone then.
+   */
+  const runSave = async (progress: { written: boolean }): Promise<boolean> => {
     // Decided once, at the click: the text written to the working file and copied to the
     // archive, the ticks the ledger records, and whether to archive at all. Typing during
     // the save, or unticking the box, counts for the next save, not this one.
@@ -160,15 +202,10 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     const text = store.fullText()
     const split = splitFrontMatter(text)
     const reading = readTicks(split.raw, members)
+    const fileName = store.state.fileName
 
-    /** Stop, without touching the store, when a different note was opened meanwhile. */
-    const stopped = () => {
-      if (sameNote(generation)) return false
-      pushToast({ text: SAVE_STOPPED, tone: 'warn' })
-      return true
-    }
-
-    // 1. the working version
+    // 1. the working version. A failed write says why; a different note opened before
+    // anything was written stops the save; one opened after it was written does not.
     let path = store.state.paths[0]
     if (!path) {
       // Opened from a .txt (or .text) file: the Markdown version is a new file named after
@@ -177,45 +214,54 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       let dir = workingDir
       if (!dir) {
         const picked = await window.marki.dialogs.pickFolder()
-        if (!picked.ok) return
-        if (stopped()) return
+        if (!picked.ok) return false
+        if (!sameNote(generation)) {
+          pushToast({ text: SAVE_STOPPED, tone: 'warn' })
+          return false
+        }
         dir = picked.path
         setPendingDir(dir)
       }
-      const name = source ? store.state.fileName : suggestName(split.body, store.state.fileName)
+      const name = source ? fileName : suggestName(split.body, fileName)
       const written = await window.marki.files.writeNew(dir, name, text)
-      if (stopped()) return
       if (!written.ok) {
         pushToast({ text: written.message, tone: 'warn' })
-        return
+        return false
       }
-      store.afterFiling([written.path], { written: text })
-      store.setFileName(baseName(written.path) || store.state.fileName)
       path = written.path
       const savedPath = written.path
-      const folder = baseName(dir) || dir
-      if (source) {
-        const sourceName = baseName(source)
-        const where = samePath(dirName(savedPath), dirName(source)) ? `next to ${sourceName}` : `in ${folder}`
-        const ext = /\.[^.]+$/.exec(sourceName)?.[0] ?? ''
-        pushToast({
-          text: `Saved as ${baseName(savedPath)} ${where}. The ${ext || 'original'} file is unchanged.`,
-          actionLabel: 'Show',
-          onAction: () => void window.marki.shell.showItem(savedPath)
-        })
+      if (!sameNote(generation)) {
+        pushToast({ text: savedElsewhere(baseName(savedPath)), actionLabel: 'Show', onAction: () => void window.marki.shell.showItem(savedPath) })
       } else {
-        pushToast({ text: `Saved to ${folder}.` })
+        store.afterFiling([savedPath], { written: text })
+        store.setFileName(baseName(savedPath) || fileName)
+        const folder = baseName(dir) || dir
+        if (source) {
+          const sourceName = baseName(source)
+          const where = samePath(dirName(savedPath), dirName(source)) ? `next to ${sourceName}` : `in ${folder}`
+          const ext = /\.[^.]+$/.exec(sourceName)?.[0] ?? ''
+          pushToast({
+            text: `Saved as ${baseName(savedPath)} ${where}. The ${ext || 'original'} file is unchanged.`,
+            actionLabel: 'Show',
+            onAction: () => void window.marki.shell.showItem(savedPath)
+          })
+        } else {
+          pushToast({ text: `Saved to ${folder}.` })
+        }
       }
     } else {
       const saved = await window.marki.files.saveAll([path], text)
-      if (stopped()) return
       if (!saved.ok) {
         pushToast({ text: saved.failures[0]?.message ?? SAVE_FAILED, tone: 'warn' })
-        return
+        return false
       }
-      store.markSaved(text)
+      if (sameNote(generation)) store.markSaved(text)
+      else pushToast({ text: savedElsewhere(baseName(path) || fileName) })
     }
-    if (!archiving) return
+    progress.written = true
+    savedOk()
+    const stillOpen = sameNote(generation)
+    if (!archiving) return stillOpen
 
     // 2. the archive copy, checked again against where the note now lives
     const now = planSave({
@@ -227,7 +273,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     })
     if (!now.canArchive) {
       pushToast({ text: `Saved, but not archived: ${now.reason}`, tone: 'warn' })
-      return
+      return stillOpen
     }
     // One moment for the file name, the archived: stamp and the ledger, so a save at
     // midnight can't name the copy one day and stamp it the next.
@@ -236,19 +282,20 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     const copyText = addArchived(text, archivedAt)
     if (copyText === null) {
       pushToast({ text: `Saved, but not archived: ${BLOCK_REASONS.yaml}`, tone: 'warn' })
-      return
+      return stillOpen
     }
-    const copy = await window.marki.archive.write(rawPath, store.state.fileName, localDate(at), copyText)
+    const copyName = baseName(path) || fileName
+    const copy = await window.marki.archive.write(rawPath, copyName, localDate(at), copyText)
     if (!copy.ok) {
       pushToast({ text: `Saved, but not archived: ${copy.message}`, tone: 'warn', duration: 10000 })
-      return
+      return stillOpen
     }
 
     // 3. the ledger, which feeds the grid counts. The copy now exists, so it is recorded
     // even if another note was opened meanwhile: nothing here reads or touches the store.
     const front = parseFrontMatter(split.raw ?? '')
     const entry: LedgerEntry = {
-      noteId: front.ok && typeof front.data.id === 'string' ? front.data.id : '',
+      noteId: front.ok ? noteIdOf(front.data.id) : '',
       bunchId: activeBunch?.id ?? '',
       skillIds: reading.skillIds,
       domainIds: reading.domainIds,
@@ -267,14 +314,77 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       actionLabel: 'Show',
       onAction: () => void window.marki.shell.showItem(copy.path)
     })
+    return stillOpen
+  }
+
+  /** Runs one save inside the guard (already held) and says whether it went through. */
+  const guardedSave = async (): Promise<boolean> => {
+    const progress = { written: false }
+    try {
+      return await runSave(progress)
+    } catch {
+      // A rejected IPC call must never leave the student thinking the note was saved,
+      // nor thinking it was lost when only the archive step failed.
+      pushToast({ text: progress.written ? 'Saved, but not archived: something went wrong.' : SAVE_FAILED, tone: 'warn' })
+      return false
+    }
   }
 
   const save = () =>
+    exclusive(
+      'user',
+      async () => {
+        await guardedSave()
+      },
+      // Pressed while another save or a move runs: save once more when it has finished.
+      () => {
+        followUpWanted.current = true
+      }
+    )
+
+  // The newest save, for the queued one to call from a fresh render.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => {
+    if (followUps > 0) void saveRef.current()
+  }, [followUps])
+
+  const saveAndWait = async (): Promise<boolean> => {
+    while (running.current) await running.current.done
+    let saved = false
+    await exclusive('user', async () => {
+      saved = await guardedSave()
+    })
+    return saved
+  }
+
+  const runSaveAs = async () => {
+    const generation = store.loadGeneration
+    const text = store.fullText()
+    const fileName = store.state.fileName
+    const result = await window.marki.files.saveAs(fileName, text)
+    if (!result.ok) {
+      // Cancelling the dialog says nothing; a failed write says why.
+      if (result.message) pushToast({ text: result.message, tone: 'warn' })
+      return
+    }
+    savedOk()
+    const name = baseName(result.path) || fileName
+    // Only the text written counts as saved, and only the note it came from moves.
+    if (!sameNote(generation)) {
+      pushToast({ text: savedElsewhere(name) })
+      return
+    }
+    store.afterFiling([result.path], { written: text })
+    store.setFileName(name)
+    pushToast({ text: `Saved as ${name}.` })
+  }
+
+  const saveAs = () =>
     exclusive('user', async () => {
       try {
-        await runSave()
+        await runSaveAs()
       } catch {
-        // A rejected IPC call must never leave the student thinking the note was saved.
         pushToast({ text: SAVE_FAILED, tone: 'warn' })
       }
     })
@@ -309,9 +419,15 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     if (store.state.dirty) {
       const text = store.fullText()
       const saved = await window.marki.files.saveAll([current], text)
-      if (stopped()) return
       if (!saved.ok) {
         pushToast({ text: saved.failures[0]?.message ?? SAVE_FAILED, tone: 'warn' })
+        return
+      }
+      savedOk()
+      // Written, so not "stopped"; but the note open now is a different one, so don't move.
+      if (!sameNote(generation)) {
+        const name = baseName(current) || current
+        pushToast({ text: `Saved ${name}. Another note was opened, so it was not moved. Choose the folder again.`, tone: 'warn' })
         return
       }
       store.markSaved(text)
@@ -366,13 +482,30 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       if (!dirty || where.length === 0 || isPlainText) return false
       const generation = store.loadGeneration
       const text = store.fullText()
+      const fileName = baseName(where[0] ?? '') || store.state.fileName
+      // Quiet when it works. When it fails, the note stays marked unsaved and the next
+      // pause tries again; the student is told once per note, until a save goes through.
+      const warn = (reason: string) => {
+        if (!sameNote(generation) || autosaveWarned.current === generation) return
+        autosaveWarned.current = generation
+        pushToast({
+          text: `Autosave couldn't write ${fileName}: ${clause(reason)}. Your text is still here; press Save to try again.`,
+          tone: 'warn',
+          duration: 10000
+        })
+      }
       try {
         const result = await window.marki.files.saveAll(where, text)
-        if (!result.ok || !sameNote(generation)) return false
+        if (!result.ok) {
+          warn(result.failures[0]?.message ?? 'the file could not be written')
+          return false
+        }
+        savedOk()
+        if (!sameNote(generation)) return false
         store.markSaved(text)
         return true
       } catch {
-        // Quiet by design: the note stays marked unsaved and the next pause tries again.
+        warn('the file could not be written')
         return false
       }
     })
@@ -396,6 +529,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     chooseWorkingFolder,
     chooseRawFolder,
     save,
+    saveAndWait,
+    saveAs,
     autosave,
     reset
   }

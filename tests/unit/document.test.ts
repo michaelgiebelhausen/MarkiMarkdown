@@ -290,6 +290,64 @@ describe('only what was written counts as saved', () => {
   })
 })
 
+describe('undo changes the text only, never where the note lives', () => {
+  test('undo after a move keeps the new path, so autosave never writes the old one again', () => {
+    store.load(loaded('one\n', 'C:/old/notes.md'))
+    store.setBody('two\n', null)
+    store.commitUndoGroup()
+    store.markSaved()
+    store.afterFiling(['C:/new/notes.md'])
+    store.setFileName('notes.md')
+    store.undo()
+    expect(store.state.body).toBe('one\n')
+    expect(store.state.paths).toEqual(['C:/new/notes.md'])
+    expect(store.state.originalPath).toBeUndefined()
+    expect(store.state.dirty).toBe(true)
+    store.redo()
+    expect(store.state.body).toBe('two\n')
+    expect(store.state.paths).toEqual(['C:/new/notes.md'])
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('undo after a first save remembers the file and its name', () => {
+    store.reset()
+    store.setBody('# Plan\n', null)
+    store.commitUndoGroup()
+    store.setBody('# Plan\nmore\n', null)
+    store.commitUndoGroup()
+    store.afterFiling(['C:/sb/Plan.md'], { written: store.fullText() })
+    store.setFileName('Plan.md')
+    store.undo()
+    expect(store.state.body).toBe('# Plan\n')
+    expect(store.state.paths).toEqual(['C:/sb/Plan.md'])
+    expect(store.state.fileName).toBe('Plan.md')
+    expect(store.needsFileName()).toBe(false)
+    expect(store.state.dirty).toBe(true)
+  })
+
+  test('undo after a .txt note was saved as Markdown does not bring plain-text mode back', () => {
+    store.load(loaded('first\n', 'C:/downloads/notes.txt'))
+    store.setBody('second\n', null)
+    store.commitUndoGroup()
+    store.afterFiling(['C:/downloads/notes.md'], { written: store.fullText() })
+    store.undo()
+    expect(store.state.body).toBe('first\n')
+    expect(store.state.isPlainText).toBe(false)
+    expect(store.state.paths).toEqual(['C:/downloads/notes.md'])
+    expect(store.state.originalPath).toBeUndefined()
+    expect(store.needsFileName()).toBe(false)
+  })
+
+  test('undo keeps the sibling folders found since', () => {
+    store.load(loaded('one\n'))
+    store.setBody('two\n', null)
+    store.commitUndoGroup()
+    store.setSiblings(['C:/other/notes.md'])
+    store.undo()
+    expect(store.state.siblingPaths).toEqual(['C:/other/notes.md'])
+  })
+})
+
 describe('telling one opened note from the next', () => {
   test('loading and resetting change the generation; editing and saving do not', () => {
     const start = store.loadGeneration
