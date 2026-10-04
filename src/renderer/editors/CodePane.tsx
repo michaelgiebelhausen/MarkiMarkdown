@@ -8,7 +8,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/lang
 import { tags } from '@lezer/highlight'
 import type { DocumentStore } from '@renderer/state/document'
 import type { SyncController } from './sync'
-import { fromStore, hiddenRange, setYamlFold, yamlFold, yamlFoldConfig, type YamlFoldState } from './yamlFold'
+import { foldRange, fromStore, hiddenRange, setYamlFold, yamlFold, yamlFoldConfig, type YamlFoldState } from './yamlFold'
 
 const theme = EditorView.theme({
   '&': { height: '100%', fontSize: 'var(--code)', backgroundColor: 'transparent' },
@@ -327,16 +327,39 @@ export function CodePane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, historyStep])
 
+  /** Whether the YAML was broken at the last text this pane drew, and in which note. */
+  const lastBroken = useRef({ broken: yaml.broken, generation: store.loadGeneration })
+
   // Apply the fold when it changes. yaml is compared field by field: App rebuilds the
   // object on every tick reading.
   useEffect(() => {
     const current = view.current
     if (!current) return
+    let folded = yaml.folded
+    // The student has just fixed broken YAML in this note (quoting a title, say) and is
+    // still typing in it: folding now would snap it shut under the cursor and move the
+    // cursor into the body mid-word. Open it instead, as if they had clicked View YAML.
+    // Only a note being opened, or the toggle, folds it.
+    const before = lastBroken.current
+    const fixedHere = before.broken && !yaml.broken && before.generation === store.loadGeneration
+    if (fixedHere && folded) {
+      const range = foldRange(current.state)
+      if (range && current.state.selection.ranges.some((r) => r.from <= range.to)) {
+        folded = false
+        openRef.current()
+      }
+    }
     const now = yamlFoldConfig(current.state)
-    if (now.folded === yaml.folded && now.broken === yaml.broken && now.summary === yaml.summary) return
-    current.dispatch({ effects: setYamlFold.of({ folded: yaml.folded, broken: yaml.broken, summary: yaml.summary }) })
+    if (now.folded === folded && now.broken === yaml.broken && now.summary === yaml.summary) return
+    current.dispatch({ effects: setYamlFold.of({ folded, broken: yaml.broken, summary: yaml.summary }) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yaml.folded, yaml.broken, yaml.summary])
+
+  // Remember, after the fold above has looked at it, how the YAML stood at this text.
+  useEffect(() => {
+    lastBroken.current = { broken: yaml.broken, generation: store.loadGeneration }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, yaml.broken])
 
   // Keep the cursor out of anything the fold hides: when it folds, and when the text moves.
   useEffect(() => {

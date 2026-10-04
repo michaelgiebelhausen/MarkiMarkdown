@@ -109,6 +109,46 @@ test('Ctrl+Home opens the folded YAML', async () => {
   expect(h.errors).toEqual([])
 })
 
+test('fixing broken YAML while typing in it keeps it open, and the typing stays in the YAML', async () => {
+  const dirs = await openFolded('---\ntitle: Chapter 3: Cells\n---\n# Note\n\nBody.\n')
+  await expect(h.page.locator('.cm-yaml-broken')).toHaveCount(1)
+  // Quote the title: the YAML can be read again the moment the closing quote goes in.
+  await source().click()
+  await h.page.keyboard.press('Control+Home')
+  await h.page.keyboard.press('ArrowDown')
+  await h.page.keyboard.press('Home')
+  for (let i = 0; i < 'title: '.length; i++) await h.page.keyboard.press('ArrowRight')
+  await h.page.keyboard.type('"')
+  await h.page.keyboard.press('End')
+  await h.page.keyboard.type('"')
+  await expect(h.page.locator('.cm-yaml-broken')).toHaveCount(0)
+  await h.page.keyboard.type('\nauthor: Me')
+
+  await expect(h.page.locator('.cm-yaml-summary')).toHaveCount(0)
+  await expect(h.page.getByRole('button', { name: 'Hide YAML' })).toBeVisible()
+  await expect
+    .poll(() => readFileSync(join(dirs.downloads, 'note.md'), 'utf8'), { timeout: 10000 })
+    .toBe('---\ntitle: "Chapter 3: Cells"\nauthor: Me\n---\n# Note\n\nBody.\n')
+  await expect
+    .poll(() => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).yamlFolded)
+    .toBe(false)
+  expect(h.errors).toEqual([])
+})
+
+test('opening a note with readable YAML after one with broken YAML folds it', async () => {
+  const dirs = await openFolded('---\ntitle: Chapter 3: Cells\n---\n# Note\n\nBody.\n')
+  await source().click()
+  await h.page.keyboard.press('Control+Home')
+  await h.page.keyboard.press('ArrowDown')
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, NOTE, 'utf8')
+  await h.app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('file:open-path', p), other)
+  await expect(h.page.locator('.cm-yaml-summary')).toContainText('YAML · 1 skill · 0 domains · 1 tag')
+  await expect(source()).not.toContainText('skills:')
+  expect(JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).yamlFolded).toBe(true)
+  expect(h.errors).toEqual([])
+})
+
 test('undo that puts back hidden YAML opens the fold', async () => {
   await openFolded('---\ntitle: Old\nskills: [librarian]\ntags: [a]\n---\n# Note\n\nBody.\n')
   const menu = (action: string) =>
