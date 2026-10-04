@@ -56,10 +56,26 @@ describe('readTicks', () => {
     expect(r.usedAliases).toBe(true)
   })
 
-  test('the new key wins when both are present', () => {
-    const r = readTicks('---\nskills: [writer]\nagents: [editor]\n---\n', members)
+  test('reads names from both the new key and the 1.1 key, new key first', () => {
+    const r = readTicks('---\nskills: [editor]\nagents: [writer, Editor]\n---\n', members)
+    expect(r.skillIds).toEqual(['s2', 's1'])
+    expect(r.skillNames).toEqual(['editor', 'writer'])
+    expect(r.usedAliases).toBe(true)
+  })
+
+  test('an empty new key does not hide names under the 1.1 key', () => {
+    const r = readTicks('---\nskills:\nagents: [writer, ghost]\n---\n', members)
     expect(r.skillIds).toEqual(['s1'])
-    expect(r.usedAliases).toBe(false)
+    expect(r.unknown).toEqual([{ name: 'ghost', kind: 'skill' }])
+    expect(r.usedAliases).toBe(true)
+  })
+
+  test('a mapping where a list belongs reports ok false', () => {
+    for (const key of ['skills', 'domains', 'agents', 'artifacts', 'tags']) {
+      const r = readTicks(`---\n${key}:\n  a: writer\n---\n`, members)
+      expect(r.ok).toBe(false)
+      expect(r.skillNames).toEqual([])
+    }
   })
 
   test('counts a repeated name once', () => {
@@ -205,5 +221,72 @@ describe('applyTicks', () => {
 
   test('unreadable YAML is left alone', () => {
     expect(applyTicks('---\ntitle: My note: draft\n---\n', { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
+  })
+
+  test('edits the tags list in place instead of rewriting it', () => {
+    const raw = '---\ntags:\n  - "exam-prep" # mine\n  - 2026\n  - "#idea"\n  - skill/old\n---\n'
+    const out = applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts) as string
+    expect(out).toContain('tags:\n  - "exam-prep" # mine\n  - 2026\n  - "#idea"\n  - skill/writer\n')
+  })
+
+  test('leaves a comma-string of tags alone', () => {
+    const raw = '---\ntags: exam-prep, notes\n---\n'
+    const out = applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts) as string
+    expect(out).toContain('tags: exam-prep, notes\n')
+  })
+
+  test('a new tags key is a block list', () => {
+    const out = applyTicks(null, { skillIds: ['s1'], domainIds: ['d1'] }, members, opts) as string
+    expect(out).toContain('tags:\n  - skill/writer\n  - domain/biology\n')
+  })
+
+  test('removes mirrored tags whatever their case', () => {
+    const raw = '---\ntags: [Skill/Old, keep]\n---\n'
+    expect(data(applyTicks(raw, { skillIds: [], domainIds: [] }, members, opts)).tags).toEqual(['keep'])
+  })
+
+  test('refuses to rewrite a mapping where a list belongs', () => {
+    for (const key of ['skills', 'domains', 'agents', 'artifacts', 'tags']) {
+      expect(applyTicks(`---\n${key}:\n  a: writer\n---\n`, { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
+    }
+  })
+
+  test('never writes the same name twice, keeping the first and its path', () => {
+    const roster: Member[] = [
+      ...members,
+      { id: 's3', kind: 'skill', name: 'Writer', emoji: '✍️', path: '/elsewhere/writer' }
+    ]
+    const d = data(applyTicks(null, { skillIds: ['s1', 's3'], domainIds: [] }, roster, opts))
+    expect(d.skills).toEqual(['writer'])
+    expect(d.skill_paths).toEqual(['C:/me/skills/writer'])
+    expect(d.tags).toEqual(['skill/writer'])
+  })
+
+  test('returns null instead of throwing on YAML it cannot rewrite', () => {
+    const raw = '---\nskills: &a [writer]\nsee: *a\n---\n'
+    let out: string | null = ''
+    expect(() => {
+      out = applyTicks(raw, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts)
+    }).not.toThrow()
+    expect(out).toBeNull()
+  })
+
+  test('moves names under both the new and the 1.1 key to the new key', () => {
+    const raw = '---\nskills:\nagents: [writer, ghost]\n---\n'
+    const d = data(applyTicks(raw, readTicks(raw, members), members, opts))
+    expect('agents' in d).toBe(false)
+    expect(d.skills).toEqual(['writer', 'ghost'])
+    expect(d.skill_paths).toEqual(['C:/me/skills/writer', ''])
+  })
+
+  test('writes the bunch name trimmed', () => {
+    const out = applyTicks(null, { skillIds: [], domainIds: [] }, members, { ...opts, bunch: '  Class prep ' }) as string
+    expect(out).toContain('bunch: Class prep\n')
+  })
+
+  test('a brand-new block uses the line ending it is given', () => {
+    const out = applyTicks(null, { skillIds: ['s1'], domainIds: [] }, members, { ...opts, eol: '\r\n' }) as string
+    expect(out).toContain('\r\n')
+    expect(out.replace(/\r\n/g, '')).not.toContain('\n')
   })
 })

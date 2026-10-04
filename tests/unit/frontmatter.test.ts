@@ -3,6 +3,7 @@ import {
   splitFrontMatter,
   parseFrontMatter,
   mergeFrontMatter,
+  MIRRORED_TAG,
   stampNote,
   addArchived
 } from '@shared/markdown/frontmatter'
@@ -158,6 +159,69 @@ describe('mergeFrontMatter', () => {
     const out = mergeFrontMatter(raw, { title: 'New' })
     expect(out).toContain('\r\n')
     expect(out.includes('\n\n')).toBe(false)
+  })
+
+  test('a new block uses the line ending it is given', () => {
+    const out = mergeFrontMatter(null, { title: 'Notes' }, '\r\n')
+    expect(out).toBe('---\r\ntitle: Notes\r\n---\r\n')
+  })
+
+  test('an existing block keeps its own line ending whatever it is given', () => {
+    const out = mergeFrontMatter('---\ntitle: Old\n---\n', { title: 'New' }, '\r\n')
+    expect(out).toBe('---\ntitle: New\n---\n')
+  })
+})
+
+describe('mergeFrontMatter list edits', () => {
+  const edit = (append: string[]) => ({ tags: { removeMatching: MIRRORED_TAG, append } })
+
+  test('edits a block list in place, keeping comments, quoting and numbers', () => {
+    const raw = '---\ntags:\n  - "exam-prep" # mine\n  - 2026\n  - skill/old\n---\n'
+    const out = mergeFrontMatter(raw, edit(['skill/writer']))
+    expect(out).toBe('---\ntags:\n  - "exam-prep" # mine\n  - 2026\n  - skill/writer\n---\n')
+  })
+
+  test('keeps a flow list flow', () => {
+    const out = mergeFrontMatter('---\ntags: [a, skill/old]\n---\n', edit(['skill/new']))
+    expect(out).toBe('---\ntags: [a, skill/new]\n---\n')
+  })
+
+  test('matches mirrored tags whatever their case', () => {
+    const out = mergeFrontMatter('---\ntags: [Skill/Old, keep]\n---\n', edit([]))
+    expect(out).toBe('---\ntags: [keep]\n---\n')
+  })
+
+  test('does not add a tag that is already there', () => {
+    const raw = '---\ntags: [skill/writer, exam-prep]\n---\n'
+    expect(mergeFrontMatter(raw, edit(['skill/writer']))).toBe(raw)
+  })
+
+  test('creates a missing key as a block list', () => {
+    const out = mergeFrontMatter('---\ntitle: x\n---\n', edit(['skill/writer', 'domain/biology']))
+    expect(out).toBe('---\ntitle: x\ntags:\n  - skill/writer\n  - domain/biology\n---\n')
+  })
+
+  test('creates nothing when there is nothing to add', () => {
+    expect(mergeFrontMatter('---\ntitle: x\n---\n', edit([]))).toBe('---\ntitle: x\n---\n')
+  })
+
+  test('removes the key when every item was removed', () => {
+    expect(mergeFrontMatter('---\ntitle: x\ntags: [skill/old]\n---\n', edit([]))).toBe('---\ntitle: x\n---\n')
+  })
+
+  test('leaves an empty list alone when there is nothing to add', () => {
+    const raw = '---\ntags: []\n---\n'
+    expect(mergeFrontMatter(raw, edit([]))).toBe(raw)
+  })
+
+  test('leaves a comma string, a mapping or an empty value completely alone', () => {
+    for (const raw of [
+      '---\ntags: exam-prep, skill/old\n---\n',
+      '---\ntags:\n  a: skill/old\n---\n',
+      '---\ntags:\n---\n'
+    ]) {
+      expect(mergeFrontMatter(raw, edit(['skill/writer']))).toBe(raw)
+    }
   })
 })
 

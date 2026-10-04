@@ -6,7 +6,7 @@
  *  - never drop unknown keys, comments or quoting the student wrote
  *  - never coerce dates into Date objects (that silently rewrites `created: 2026-08-21`)
  */
-import { Document, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
+import { Document, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
 
 export interface SplitResult {
   /** The whole block including both fences and the trailing newline, or null. */
@@ -64,8 +64,8 @@ function innerYaml(raw: string): string {
   return out.join('\n')
 }
 
-function detectEol(raw: string | null): '\n' | '\r\n' {
-  return raw && raw.includes('\r\n') ? '\r\n' : '\n'
+function detectEol(raw: string): '\n' | '\r\n' {
+  return raw.includes('\r\n') ? '\r\n' : '\n'
 }
 
 /**
@@ -113,14 +113,67 @@ export function parseFrontMatter(raw: string): ParseResult {
 /** Keys a second-brain script greps line by line, so they are written one item per line. */
 const BLOCK_LIST_KEYS = new Set(['skills', 'skill_paths', 'domains', 'domain_paths'])
 
-/** Tags in these namespaces belong to the app and are rewritten from the ticks. 1.1 used agent/ and artifact/. */
-export const MIRRORED_TAG = /^(skill|domain|agent|artifact)\//
+/** Tags in these namespaces, in any case, belong to the app and are rewritten from the ticks. 1.1 used agent/ and artifact/. */
+export const MIRRORED_TAG = /^(skill|domain|agent|artifact)\//i
+
+/**
+ * A patch value that edits a list in place instead of replacing it: items matching
+ * removeMatching go unless append still wants them, then each append string not
+ * already there is added. Every other item keeps its comment, quoting and type.
+ */
+export interface ListEdit {
+  removeMatching: RegExp
+  append: string[]
+}
+
+export function isListEdit(value: unknown): value is ListEdit {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const edit = value as Partial<ListEdit>
+  return edit.removeMatching instanceof RegExp && Array.isArray(edit.append)
+}
+
+/**
+ * Applies a ListEdit to one key. A missing key becomes a block list, but only when
+ * there is something to add. A comma string, a mapping or an empty value is not a
+ * list we can edit safely, so it is left exactly as written. When nothing would
+ * change the node is not touched at all.
+ */
+function applyListEdit(doc: Document, key: string, edit: ListEdit): void {
+  if (!doc.has(key)) {
+    if (edit.append.length === 0) return
+    const node = doc.createNode(edit.append) as YAMLSeq
+    node.flow = false
+    doc.set(key, node)
+    return
+  }
+  const node = doc.get(key, true)
+  if (!isSeq(node)) return
+  const text = (item: unknown): string | null => (isScalar(item) ? String(item.value) : null)
+  const removed = node.items.filter((item) => {
+    const value = text(item)
+    return value !== null && edit.removeMatching.test(value) && !edit.append.includes(value)
+  })
+  const kept = node.items.filter((item) => !removed.includes(item))
+  const present = kept.map(text)
+  const added = edit.append.filter((tag, i) => !present.includes(tag) && edit.append.indexOf(tag) === i)
+  if (removed.length === 0 && added.length === 0) return
+  if (kept.length === 0 && added.length === 0) {
+    doc.delete(key)
+    return
+  }
+  node.items = kept
+  for (const tag of added) node.items.push(doc.createNode(tag))
+}
 
 function applyPatch(doc: Document, patch: FrontMatterPatch): void {
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue
     if (value === null) {
       doc.delete(key)
+      continue
+    }
+    if (isListEdit(value)) {
+      applyListEdit(doc, key, value)
       continue
     }
     if (Array.isArray(value)) {
@@ -146,18 +199,21 @@ function serialise(doc: Document, eol: '\n' | '\r\n'): string {
   return out.join(eol)
 }
 
-export function mergeFrontMatter(raw: string | null, patch: FrontMatterPatch): string {
-  const eol = detectEol(raw)
+/**
+ * Applies a patch to a raw front matter block, or builds a new block when raw is null.
+ * The new block uses eol (default "\n"); an existing block keeps its own line ending.
+ */
+export function mergeFrontMatter(raw: string | null, patch: FrontMatterPatch, eol?: '\n' | '\r\n'): string {
   if (raw === null) {
     const doc = new Document({})
     applyPatch(doc, patch)
-    return serialise(doc, eol)
+    return serialise(doc, eol ?? '\n')
   }
   const doc = readDocument(raw)
   if (!doc) return raw
   if (doc.contents === null) doc.contents = doc.createNode({}) as Document["contents"]
   applyPatch(doc, patch)
-  return serialise(doc, eol)
+  return serialise(doc, detectEol(raw))
 }
 
 export interface Stamp {

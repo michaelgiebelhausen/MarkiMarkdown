@@ -104,6 +104,14 @@ export function MemberDialog({
       kind === 'skill'
         ? trimmed.toLowerCase().replace(/\s+/g, '-') || 'skill'
         : trimmed || 'Folder'
+    // Notes list members by name, so two of a kind must never share one.
+    const twin = siblings.find(
+      (m) => m.id !== existing?.id && m.kind === kind && m.name.toLowerCase() === finalName.toLowerCase()
+    )
+    if (twin) {
+      setError(`Another ${kind} is already called ${finalName}.`)
+      return
+    }
     onSave({
       id: existing?.id ?? `${kind === 'skill' ? 's' : 'd'}${Date.now().toString(36)}`,
       kind,
