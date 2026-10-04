@@ -30,11 +30,21 @@ export interface TickReading extends Ticks {
   ok: boolean
   /** Why ok is false, in plain words a student can act on. Empty when ok. */
   reason: string
-  /** Every name listed under skills and then 1.1 agents, known or not, as written. */
+  /**
+   * Every name listed under skills and then 1.1 agents, known or not, as written. Two
+   * names count once only when they reach the same member, or, for names nobody has,
+   * when they differ only in case; the first spelling is kept.
+   */
   skillNames: string[]
   domainNames: string[]
   /** Names in the YAML that match nobody of that kind in the roster. */
   unknown: UnknownName[]
+  /**
+   * For each member the note names, by member id, the spelling the note uses for it
+   * (the first, when it names the member more than once). applyTicks writes this back
+   * instead of the roster's name, so ticking something else never respells it.
+   */
+  spellings: Record<string, string>
   bunch: string | null
   /** The note still has the 1.1 key agents or artifacts, alone or beside the new key. */
   usedAliases: boolean
@@ -50,6 +60,7 @@ function empty(ok: boolean, reason = ''): TickReading {
     skillNames: [],
     domainNames: [],
     unknown: [],
+    spellings: {},
     bunch: null,
     usedAliases: false,
     tagCount: 0
@@ -57,25 +68,20 @@ function empty(ok: boolean, reason = ''): TickReading {
 }
 
 /**
- * The key two names are compared by: trimmed, lower case, and any run of spaces, dashes
- * or underscores counted as one dash. The roster saves "Study Coach" as study-coach, and a
- * student who types either spelling into the YAML means the same skill.
+ * The loosest way two names are compared: trimmed, lower case, and any run of spaces,
+ * dashes or underscores counted as one dash. The roster saves "Study Coach" as
+ * study-coach, and a student who types either spelling into the YAML means the same skill.
+ * It is only the last resort when matching a name to a member (see findMember), and two
+ * names are never merged merely because their keys match.
  */
 export function nameKey(name: string): string {
   return name.trim().toLowerCase().replace(/[\s_-]+/g, '-')
 }
 
-/** Adds a name unless the list already has it under the same name key. */
-function addName(out: string[], name: string): boolean {
-  const key = nameKey(name)
-  if (out.some((n) => nameKey(n) === key)) return false
-  out.push(name)
-  return true
-}
-
 /**
- * A YAML list or an Obsidian-style comma string, trimmed, without case-insensitive
- * repeats. Objects are never stringified: a mapping, or a mapping inside a list, gives nothing.
+ * A YAML list or an Obsidian-style comma string, trimmed, empty items dropped, repeats
+ * kept (readTicks decides which names count once). Objects are never stringified: a
+ * mapping, or a mapping inside a list, gives nothing.
  */
 function names(value: unknown): string[] {
   if (value === null || value === undefined) return []
@@ -85,7 +91,7 @@ function names(value: unknown): string[] {
   for (const item of list) {
     if (item === null || item === undefined || typeof item === 'object') continue
     const name = String(item).trim()
-    if (name.length > 0) addName(out, name)
+    if (name.length > 0) out.push(name)
   }
   return out
 }
@@ -118,9 +124,23 @@ function hasNonScalarItem(value: unknown): boolean {
   return Array.isArray(value) && value.some((item) => typeof item === 'object' && item !== null)
 }
 
+/**
+ * The member of this kind a name in the YAML means: the one with exactly that name, else
+ * one whose name differs only in case, else one with the same name key. Two members can
+ * share a key (1.1 rosters were de-duplicated by id only), so the closer matches come
+ * first: "Cell Biology" always means the member called Cell Biology, never its
+ * cell-biology twin.
+ */
 function findMember(members: Member[], kind: MemberKind, name: string): Member | undefined {
-  const key = nameKey(name)
-  return members.find((m) => m.kind === kind && nameKey(m.name) === key)
+  const ofKind = members.filter((m) => m.kind === kind)
+  const wanted = name.trim()
+  const lower = wanted.toLowerCase()
+  const key = nameKey(wanted)
+  return (
+    ofKind.find((m) => m.name.trim() === wanted) ??
+    ofKind.find((m) => m.name.trim().toLowerCase() === lower) ??
+    ofKind.find((m) => nameKey(m.name) === key)
+  )
 }
 
 /**
@@ -142,29 +162,29 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
   const nested = NAME_KEYS.find((key) => hasNonScalarItem(data[key]))
   if (nested !== undefined) return empty(false, `An item under ${nested} is not a plain name.`)
 
-  const both = (key: string, alias: string) => {
-    const out = names(data[key])
-    for (const name of names(data[alias])) addName(out, name)
-    return out
-  }
-  const skillNames = both('skills', 'agents')
-  const domainNames = both('domains', 'artifacts')
-
   const reading = empty(true)
-  reading.skillNames = skillNames
-  reading.domainNames = domainNames
-  const resolve = (list: string[], kind: MemberKind, ids: string[]) => {
-    for (const name of list) {
+  // A name counts once only when it reaches a member already counted, or, when nobody has
+  // it, when it differs from an unknown name already counted only in case. Names that
+  // merely share a name key stay apart, so neither is dropped on the next write.
+  const resolve = (key: string, alias: string, kind: MemberKind, ids: string[], out: string[]) => {
+    const unknownSeen: string[] = []
+    for (const name of [...names(data[key]), ...names(data[alias])]) {
       const member = findMember(members, kind, name)
       if (member) {
-        if (!ids.includes(member.id)) ids.push(member.id)
+        if (ids.includes(member.id)) continue
+        ids.push(member.id)
+        reading.spellings[member.id] = name
       } else {
+        const lower = name.toLowerCase()
+        if (unknownSeen.includes(lower)) continue
+        unknownSeen.push(lower)
         reading.unknown.push({ name, kind })
       }
+      out.push(name)
     }
   }
-  resolve(skillNames, 'skill', reading.skillIds)
-  resolve(domainNames, 'domain', reading.domainIds)
+  resolve('skills', 'agents', 'skill', reading.skillIds, reading.skillNames)
+  resolve('domains', 'artifacts', 'domain', reading.domainIds, reading.domainNames)
 
   reading.bunch = typeof data.bunch === 'string' && data.bunch.trim().length > 0 ? data.bunch.trim() : null
   reading.usedAliases = 'agents' in data || 'artifacts' in data
@@ -199,9 +219,13 @@ function slug(name: string): string {
  * Writes ticks into the front matter. This is the only writer of the app-owned keys
  * (bunch, skills, skill_paths, domains, domain_paths, mirrored tags, and on first use
  * id, type, title and created). Every other key and tag is left alone, and so is the
- * body: only the front matter block is returned. Names in the YAML that nobody in the
- * roster has are kept, with an empty path, so a student's typing is never lost, and no
- * name is written twice in any case. The tags list is edited in place, so the student's
+ * body: only the front matter block is returned. A member the note already names keeps
+ * the spelling the note uses for it (readTicks' spellings); a newly ticked member is
+ * written under the roster's name; paths are always the roster's. Names in the YAML that
+ * nobody in the roster has are kept, with an empty path, so a student's typing is never
+ * lost. Two names are folded into one only when they reach the same member (or, for
+ * unknown names, differ only in case), never because they merely look alike, and the
+ * same name is never written twice. The tags list is edited in place, so the student's
  * own tags keep their style, comments and quoting; tags written as a comma string are
  * left alone. Returns null, so the caller writes nothing, when the front matter cannot
  * be parsed, holds a mapping where a list belongs (or inside a list of names), repeats a
@@ -218,13 +242,26 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
     const list = (kind: MemberKind, ids: string[]) => {
       const names: string[] = []
       const paths: string[] = []
+      // Mirrored tags follow the roster's name, so they stay the same whatever the spelling.
+      const tagNames: string[] = []
       for (const m of members.filter((m) => m.kind === kind && ids.includes(m.id))) {
-        if (addName(names, m.name)) paths.push(toForwardSlashes(m.path))
+        // A member the note already names keeps the note's spelling; a new tick gets the
+        // roster's name. The path is always the roster's.
+        const name = before.spellings[m.id] ?? m.name
+        // Exactly the same name twice would read back as one member, so the first wins.
+        if (names.includes(name)) continue
+        names.push(name)
+        paths.push(toForwardSlashes(m.path))
+        tagNames.push(m.name)
       }
+      // readTicks has already counted these once each, and none of them reaches a member.
       for (const u of before.unknown.filter((u) => u.kind === kind)) {
-        if (addName(names, u.name)) paths.push('')
+        if (names.includes(u.name)) continue
+        names.push(u.name)
+        paths.push('')
+        tagNames.push(u.name)
       }
-      return { names, paths }
+      return { names, paths, tagNames }
     }
     const skills = list('skill', ticks.skillIds)
     const domains = list('domain', ticks.domainIds)
@@ -235,8 +272,8 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
       const add = (tag: string) => {
         if (!append.includes(tag)) append.push(tag)
       }
-      for (const name of skills.names) add(`skill/${slug(name)}`)
-      for (const name of domains.names) add(`domain/${slug(name)}`)
+      for (const name of skills.tagNames) add(`skill/${slug(name)}`)
+      for (const name of domains.tagNames) add(`domain/${slug(name)}`)
       tags = { removeMatching: MIRRORED_TAG, append }
     }
 

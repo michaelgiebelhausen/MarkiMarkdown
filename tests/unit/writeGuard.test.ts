@@ -18,6 +18,10 @@ function flakyFs(code: string, failures: number) {
       calls.push(`write ${path}`)
       files.set(path, text)
     },
+    unlinkSync: (path) => {
+      calls.push(`unlink ${path}`)
+      files.delete(path)
+    },
     renameSync: (from, to) => {
       calls.push(`rename ${from} -> ${to}`)
       if (left > 0) {
@@ -56,6 +60,21 @@ describe('replaceFileSync', () => {
     expect(() => replaceFileSync('/x/settings.json', 'new', fs, (ms) => pauses.push(ms))).toThrow('EPERM')
     expect(pauses).toHaveLength(3)
     expect(calls.filter((c) => c.startsWith('rename'))).toHaveLength(4)
+  })
+
+  test('removes the temp file when it finally gives up', () => {
+    const { fs, files, calls } = flakyFs('EPERM', 10)
+    expect(() => replaceFileSync('/x/settings.json', 'new', fs, () => {})).toThrow('EPERM')
+    expect(files.has('/x/settings.json.tmp')).toBe(false)
+    expect(calls.filter((c) => c.startsWith('unlink'))).toEqual(['unlink /x/settings.json.tmp'])
+  })
+
+  test('still throws the write error when the temp file cannot be removed either', () => {
+    const { fs } = flakyFs('ENOSPC', 1)
+    fs.unlinkSync = () => {
+      throw failing('ENOENT')
+    }
+    expect(() => replaceFileSync('/x/settings.json', 'new', fs, () => {})).toThrow('ENOSPC')
   })
 
   test('does not retry an error that will not clear by itself', () => {

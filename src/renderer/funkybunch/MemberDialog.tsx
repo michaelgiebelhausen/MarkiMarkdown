@@ -104,13 +104,23 @@ export function MemberDialog({
       return
     }
     const trimmed = name.trim()
-    const finalName =
-      kind === 'skill'
+    // Editing a member without touching its name or kind (say, just its icon) keeps the
+    // name exactly as saved, even an older spelling the rules below would change.
+    const unchanged =
+      existing !== undefined && existing.kind === kind && trimmed.length > 0 && trimmed === existing.name.trim()
+    const finalName = unchanged
+      ? existing.name
+      : kind === 'skill'
         ? trimmed.toLowerCase().replace(/\s+/g, '-') || 'skill'
         : trimmed || 'Folder'
     // Notes list members by name, so two of a kind must never share one. Names are
-    // compared the way notes are read, so "Cell Biology" and cell-biology are one name.
-    const twin = siblings.find((m) => m.id !== existing?.id && m.kind === kind && nameKey(m.name) === nameKey(finalName))
+    // compared by their name key, so "Cell Biology" and cell-biology count as one name.
+    // An older roster may already hold such twins; saving one under its unchanged name is
+    // allowed, since it makes nothing worse, and notes still tell the twins apart because
+    // an exact name is matched first. A new or renamed member is always checked.
+    const twin = unchanged
+      ? undefined
+      : siblings.find((m) => m.id !== existing?.id && m.kind === kind && nameKey(m.name) === nameKey(finalName))
     if (twin) {
       setError(`Another ${kind} is already called ${finalName}.`)
       return
