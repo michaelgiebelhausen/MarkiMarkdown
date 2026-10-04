@@ -145,9 +145,47 @@ async function removePartial(path: string): Promise<void> {
 }
 
 /**
+ * A copy that inherited the read-only flag: make it writable, flush it through a writable
+ * handle, then put its mode back. Returns false (changing nothing that lasts) when any
+ * step before the flush is refused.
+ */
+async function syncReadOnlyCopy(path: string): Promise<boolean> {
+  let mode: number
+  try {
+    mode = (await fsp.stat(path)).mode & 0o7777
+    await fsp.chmod(path, mode | 0o200)
+  } catch (error) {
+    log.warn('Could not make a read-only copy writable to flush it', path, error)
+    return false
+  }
+  try {
+    let handle: Awaited<ReturnType<typeof fsp.open>>
+    try {
+      handle = await fsp.open(path, 'r+')
+    } catch (error) {
+      log.warn('Could not open a read-only copy for writing to flush it', path, error)
+      return false
+    }
+    try {
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    return true
+  } finally {
+    try {
+      await fsp.chmod(path, mode)
+    } catch (error) {
+      log.warn('Could not make the copy read-only again', path, error)
+    }
+  }
+}
+
+/**
  * Flushes a finished copy to the disk. A copy that inherited the read-only flag cannot be
- * opened for writing, and Windows will not flush a handle opened only for reading: that
- * one case is logged and accepted, because copyFile itself already finished.
+ * opened for writing, so it is made writable for the flush and read-only again after. If
+ * even that is refused, Windows will not flush a handle opened only for reading: that one
+ * case is logged and accepted, because copyFile itself already finished.
  */
 async function syncCopy(path: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof fsp.open>>
@@ -156,6 +194,7 @@ async function syncCopy(path: string): Promise<void> {
     handle = await fsp.open(path, 'r+')
   } catch (error) {
     if (code(error) !== 'EPERM' && code(error) !== 'EACCES') throw error
+    if (await syncReadOnlyCopy(path)) return
     handle = await fsp.open(path, 'r')
     readOnly = true
   }

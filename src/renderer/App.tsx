@@ -76,30 +76,62 @@ export default function App() {
     })
   }, [])
 
-  const saveSettings = useCallback(async (patch: Partial<Settings>) => {
-    const result = await window.marki.settings.write(patch)
-    if (result.ok) setSettings(result.settings)
-    return result
-  }, [])
+  /** Each "this is not being saved" warning is shown once per session and stays until dismissed. */
+  const warnedNotSaving = useRef(new Set<'settings' | 'ledger'>())
+  const warnNotSaving = useCallback(
+    (what: 'settings' | 'ledger') => {
+      if (warnedNotSaving.current.has(what)) return
+      warnedNotSaving.current.add(what)
+      pushToast({
+        text:
+          what === 'settings'
+            ? "MarkiMarkdown can't save its settings right now, so changes to your skills, domains and bunches will be lost when you close it. Check that the settings folder isn't locked by another program, then restart."
+            : "MarkiMarkdown can't update its archive counts right now. Your notes and archive copies are safe.",
+        tone: 'warn',
+        duration: 0
+      })
+    },
+    [pushToast]
+  )
+
+  /** Applies a settings write's reply, and says so once when it only lives in memory. */
+  const applySettingsReply = useCallback(
+    (result: Awaited<ReturnType<typeof window.marki.settings.write>>) => {
+      if (!result.ok) return
+      setSettings(result.settings)
+      if (!result.persisted) warnNotSaving('settings')
+    },
+    [warnNotSaving]
+  )
+
+  const saveSettings = useCallback(
+    async (patch: Partial<Settings>) => {
+      const result = await window.marki.settings.write(patch)
+      applySettingsReply(result)
+      return result
+    },
+    [applySettingsReply]
+  )
 
   /** The newest settings, even before React re-renders, so quick toggles build on each other. */
   const settingsRef = useRef<Settings | null>(null)
   settingsRef.current = settings
 
   // Optimistic, so the checkbox flips in the same frame as the click.
-  const togglePaneKey = useCallback((key: PaneKey) => {
-    const current = settingsRef.current
-    if (!current) return
-    const panes = togglePane(current.panes, key)
-    if (panes === current.panes) return
-    const next = { ...current, panes }
-    settingsRef.current = next
-    setSettings(next)
-    // The reply carries every write so far, so the last one to land is always complete.
-    void window.marki.settings.write({ panes }).then((result) => {
-      if (result.ok) setSettings(result.settings)
-    })
-  }, [])
+  const togglePaneKey = useCallback(
+    (key: PaneKey) => {
+      const current = settingsRef.current
+      if (!current) return
+      const panes = togglePane(current.panes, key)
+      if (panes === current.panes) return
+      const next = { ...current, panes }
+      settingsRef.current = next
+      setSettings(next)
+      // The reply carries every write so far, so the last one to land is always complete.
+      void window.marki.settings.write({ panes }).then(applySettingsReply)
+    },
+    [applySettingsReply]
+  )
 
   const members = settings?.members ?? []
   const bunches = settings?.bunches ?? []
@@ -466,7 +498,12 @@ export default function App() {
       archivedAt: nowLocalIso()
     }
     const appended = await window.marki.ledger.append(entry)
-    if (appended.ok) setLedger(appended.entries)
+    if (appended.ok) {
+      setLedger(appended.entries)
+      if (!appended.saved) warnNotSaving('ledger')
+    } else {
+      warnNotSaving('ledger')
+    }
 
     pushToast({
       text: outcome.notice || `Filed to ${bunch.name}.`,
@@ -496,7 +533,7 @@ export default function App() {
         }
       }
     })
-  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile, saveSettings])
+  }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile, saveSettings, warnNotSaving])
 
   /* ---------------- actions from the menu and the top bar ---------------- */
 

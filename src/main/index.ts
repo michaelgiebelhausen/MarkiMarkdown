@@ -83,6 +83,7 @@ export function createWindow(openPath?: string): BrowserWindow {
   win.on('close', () => {
     const [width, height] = win.getSize()
     const [x, y] = win.getPosition()
+    // The window is going away, so there is no one left to tell; writeSettings logs a failure.
     writeSettings({ windowBounds: { width, height, x, y } } as never)
   })
 
@@ -161,7 +162,9 @@ async function ensureWelcomeNote(): Promise<string | undefined> {
     } catch {
       await writeAtomic(target, WELCOME_NOTE)
     }
-    writeSettings({ seenWelcome: true })
+    if (!writeSettings({ seenWelcome: true }).persisted) {
+      log.warn('Could not remember that the welcome note was shown; it will open again next time')
+    }
     return target
   } catch (error) {
     log.warn('Could not create the welcome note', error)
@@ -224,7 +227,7 @@ ipcMain.handle('settings:read', () => ({ ...readSettings(), hasApiKey: loadApiKe
 
 ipcMain.handle('settings:write', (_e, patch) => {
   try {
-    return ok({ settings: writeSettings(patch) })
+    return ok(writeSettings(patch))
   } catch (error) {
     return fail(translateFsError(error, 'your settings'))
   }

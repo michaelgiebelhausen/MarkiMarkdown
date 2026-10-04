@@ -91,12 +91,16 @@ function mayPersist(): boolean {
   return true
 }
 
-export function writeSettings(next: Partial<Settings>): Settings {
+/**
+ * Merges `next` into the settings in memory and saves them. `persisted` is false when the
+ * change lives only in memory: the file on disk is being kept untouched, or the write failed.
+ */
+export function writeSettings(next: Partial<Settings>): { settings: Settings; persisted: boolean } {
   const merged = { ...readSettings(), ...next }
   cache = merged
   if (!mayPersist()) {
     log.warn('Settings were not saved to disk: the existing file is kept untouched')
-    return merged
+    return { settings: merged, persisted: false }
   }
   try {
     const target = settingsPath()
@@ -104,10 +108,11 @@ export function writeSettings(next: Partial<Settings>): Settings {
     const temp = `${target}.tmp`
     writeFileSync(temp, JSON.stringify(merged, null, 2), 'utf8')
     renameSync(temp, target)
+    return { settings: merged, persisted: true }
   } catch (error) {
     log.error('Could not save settings', error)
+    return { settings: merged, persisted: false }
   }
-  return merged
 }
 
 /** API keys are stored through the OS keychain wrapper, never in the JSON file. */

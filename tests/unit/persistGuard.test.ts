@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmdirSync, writeFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -80,7 +80,9 @@ describe('settings on disk', () => {
     writeFileSync(join(state.userData, 'settings.json'), '{ broken', 'utf8')
     state.failBackup = true
     const { writeSettings, readSettings } = await freshSettings()
-    expect(writeSettings({ yamlFolded: false }).yamlFolded).toBe(false)
+    const result = writeSettings({ yamlFolded: false })
+    expect(result.settings.yamlFolded).toBe(false)
+    expect(result.persisted).toBe(false)
     expect(readSettings().yamlFolded).toBe(false)
     expect(readFileSync(join(state.userData, 'settings.json'), 'utf8')).toBe('{ broken')
   })
@@ -88,8 +90,24 @@ describe('settings on disk', () => {
   test('a file that cannot be read is never overwritten', async () => {
     mkdirSync(join(state.userData, 'settings.json'))
     const { writeSettings } = await freshSettings()
-    expect(writeSettings({ yamlFolded: false }).yamlFolded).toBe(false)
+    const result = writeSettings({ yamlFolded: false })
+    expect(result.settings.yamlFolded).toBe(false)
+    expect(result.persisted).toBe(false)
     expect(statSync(join(state.userData, 'settings.json')).isDirectory()).toBe(true)
+  })
+
+  test('a save that reaches the disk says so', async () => {
+    const { writeSettings } = await freshSettings()
+    expect(writeSettings({ yamlFolded: false }).persisted).toBe(true)
+  })
+
+  test('a save the disk refuses says so', async () => {
+    // a folder where the temp file should go makes the write fail
+    mkdirSync(join(state.userData, 'settings.json.tmp'))
+    const { writeSettings } = await freshSettings()
+    const result = writeSettings({ yamlFolded: false })
+    expect(result.persisted).toBe(false)
+    expect(result.settings.yamlFolded).toBe(false)
   })
 
   test('the migration backup is named after the old version', async () => {
@@ -161,5 +179,15 @@ describe('ledger on disk', () => {
     const { appendLedger } = await freshLedger()
     expect(appendLedger(entry)).toEqual({ entries: [], saved: false })
     expect(statSync(path()).isDirectory()).toBe(true)
+  })
+
+  test('a ledger that could not be read once is saved to once it reads again', async () => {
+    mkdirSync(path())
+    const { appendLedger } = await freshLedger()
+    expect(appendLedger(entry).saved).toBe(false)
+    rmdirSync(path())
+    writeFileSync(path(), JSON.stringify([entry]), 'utf8')
+    expect(appendLedger(entry)).toEqual({ entries: [entry, entry], saved: true })
+    expect(JSON.parse(readFileSync(path(), 'utf8'))).toEqual([entry, entry])
   })
 })

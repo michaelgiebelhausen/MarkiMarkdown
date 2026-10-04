@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, type Harness } from './helpers'
 
@@ -152,6 +152,25 @@ test('a divider drag ends when a pane is toggled in the middle of it', async () 
   await expect
     .poll(() => JSON.parse(readFileSync(join(dirs.userData, 'settings.json'), 'utf8')).panes)
     .toEqual({ bunch: false, raw: true, rendered: true })
+  expect(h.errors).toEqual([])
+})
+
+test('settings that cannot be saved are reported once, and the warning stays', async () => {
+  const dirs = prepare()
+  h = await launch(dirs)
+  const file = join(dirs.userData, 'settings.json')
+  // A read-only settings file cannot be replaced, so every save fails.
+  chmodSync(file, 0o444)
+  try {
+    await h.page.getByRole('checkbox', { name: 'Funky Bunch' }).uncheck()
+    await h.page.getByRole('checkbox', { name: 'Funky Bunch' }).check()
+    const warning = h.page.locator('.toast', { hasText: "can't save its settings right now" })
+    await expect(warning).toHaveCount(1)
+    await h.page.waitForTimeout(7000)
+    await expect(warning).toHaveCount(1)
+  } finally {
+    chmodSync(file, 0o644)
+  }
   expect(h.errors).toEqual([])
 })
 

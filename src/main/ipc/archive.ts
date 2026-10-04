@@ -27,7 +27,9 @@ export type WriteResult = { ok: true; path: string; notice?: string } | { ok: fa
 const MISSING = "The folder can't be found. It may have been moved, renamed, or be on a drive that isn't connected."
 const UNWRITABLE = "The folder can't be written to. It may be open in another program, or syncing."
 
-const NOT_ALLOWED = "The folder can't be written to. MarkiMarkdown doesn't have permission to save there."
+// Windows reports a file held by another program or a sync client as EPERM/EACCES too.
+const NOT_ALLOWED =
+  "The folder can't be written to. It may be open in another program or syncing, or MarkiMarkdown may not have permission to save there."
 const NO_SPACE = 'There is no space left on the disk.'
 const TOO_LONG = 'The name is too long for this folder. Try a shorter note name or a folder nearer the top of the drive.'
 const NOTE_GONE = "The note couldn't be found. It may have been moved or renamed outside MarkiMarkdown."

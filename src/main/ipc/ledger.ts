@@ -8,8 +8,9 @@ import { backupOnce, backupUnique } from './backup'
 import { judgeRead, readOutcome, type Guarded } from './readGuard'
 
 /**
- * Set once the ledger on disk could not be read, or could not be backed up before a
- * rewrite. Appends then report saved false and leave the file alone for the session.
+ * Set once the ledger on disk could not be backed up before a rewrite. Appends then report
+ * saved false and leave the file alone for the session. A ledger that merely could not be
+ * read is decided again on each append, since every append reads it afresh.
  */
 let doNotPersist = false
 /** The ledger is read often; say each kind of trouble once per session. */
@@ -66,10 +67,8 @@ export function readLedger(): LedgerEntry[] {
  */
 function mayRewrite(loaded: Loaded): boolean {
   if (doNotPersist) return false
-  if (loaded.kind === 'unreadable') {
-    doNotPersist = true
-    return false
-  }
+  // Its entries are unknown, so writing would replace them; try again on the next append.
+  if (loaded.kind === 'unreadable') return false
   if (loaded.kind !== 'corrupt' && !loaded.dropped) return true
   const source = ledgerPath()
   const backup = backupUnique(source, dirname(source), 'ledger.corrupt')

@@ -154,12 +154,17 @@ describe('writeArchiveCopy', () => {
     expect(result).toEqual({ ok: false, message: 'There is no space left on the disk.' })
   })
 
-  test('EPERM is a permissions problem too', async () => {
-    const disk = fake([RAW])
-    disk.createError = errno('EPERM')
-    const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
-    expect(!result.ok && result.message).toContain("can't be written to")
-    expect(!result.ok && result.message).toContain('permission')
+  test('EPERM and EACCES name a lock or a sync as well as permissions, since Windows uses them for both', async () => {
+    for (const code of ['EPERM', 'EACCES']) {
+      const disk = fake([RAW])
+      disk.createError = errno(code)
+      const result = await writeArchiveCopy(disk, RAW, 'essay.md', '2026-10-04', 'T')
+      expect(result).toEqual({
+        ok: false,
+        message:
+          "The folder can't be written to. It may be open in another program or syncing, or MarkiMarkdown may not have permission to save there."
+      })
+    }
   })
 
   test('a name that is too long says so', async () => {

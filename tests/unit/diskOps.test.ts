@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { promises as fsp, mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { promises as fsp, chmodSync, mkdtempSync, writeFileSync, existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -112,6 +112,28 @@ describe('diskArchiveOps.copyExclusive', () => {
     })
     expect(readFileSync(join(dir, 'from.md'), 'utf8')).toBe('TEXT')
     expect(existsSync(join(dir, 'to.md'))).toBe(false)
+  })
+
+  test('a read-only copy is made writable just long enough to flush it, then made read-only again', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'from.md'), 'TEXT', 'utf8')
+    chmodSync(join(dir, 'from.md'), 0o444)
+    const synced: string[] = []
+    vi.spyOn(fsp, 'open').mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
+      const handle = await realOpen(...args)
+      const realSync = handle.sync.bind(handle)
+      Object.assign(handle, {
+        sync: async () => {
+          await realSync()
+          synced.push(`${String(args[0])}|${String(args[1])}`)
+        }
+      })
+      return handle
+    })
+    expect(await diskArchiveOps.copyExclusive(join(dir, 'from.md'), join(dir, 'to.md'))).toBe(true)
+    expect(readFileSync(join(dir, 'to.md'), 'utf8')).toBe('TEXT')
+    expect(synced).toEqual([`${join(dir, 'to.md')}|r+`])
+    expect(statSync(join(dir, 'to.md')).mode & 0o200).toBe(0)
   })
 
   test('returns false when the target is already there', async () => {

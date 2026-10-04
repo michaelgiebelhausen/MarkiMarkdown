@@ -9,7 +9,8 @@ type Result<T> = Ok<T> | Err
 const api = {
   settings: {
     read: (): Promise<Settings & { hasApiKey: boolean }> => ipcRenderer.invoke('settings:read'),
-    write: (patch: Partial<Settings>): Promise<Result<{ settings: Settings }>> =>
+    /** `persisted` is false when the change is only kept in memory for this session. */
+    write: (patch: Partial<Settings>): Promise<Result<{ settings: Settings; persisted: boolean }>> =>
       ipcRenderer.invoke('settings:write', patch),
     saveApiKey: (key: string): Promise<Result<{ saved: boolean }>> =>
       ipcRenderer.invoke('settings:save-api-key', key)

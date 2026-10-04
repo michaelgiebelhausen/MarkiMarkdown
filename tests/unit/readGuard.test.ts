@@ -55,6 +55,44 @@ describe('readOutcome', () => {
     expect(readOutcome(join(dir, 'missing.json'))).toEqual({ code: 'ENOENT' })
   })
 
+  /** A reader that fails with `codes` in turn, then returns `text`. */
+  function flaky(codes: string[], text = '{}') {
+    const calls: string[] = []
+    const read = (path: string): string => {
+      calls.push(path)
+      const code = codes[calls.length - 1]
+      if (code !== undefined) throw Object.assign(new Error(code), { code })
+      return text
+    }
+    return { read, calls }
+  }
+
+  test('a briefly locked file is read on a retry', () => {
+    const pauses: number[] = []
+    const { read, calls } = flaky(['EBUSY', 'EPERM'])
+    expect(readOutcome('x.json', read, (ms) => pauses.push(ms))).toEqual({ text: '{}' })
+    expect(calls).toHaveLength(3)
+    expect(pauses).toEqual([50, 50])
+  })
+
+  test('a file that stays locked is reported after three retries', () => {
+    const pauses: number[] = []
+    const { read, calls } = flaky(['EACCES', 'EACCES', 'EACCES', 'EACCES', 'EACCES'])
+    expect(readOutcome('x.json', read, (ms) => pauses.push(ms))).toEqual({ code: 'EACCES' })
+    expect(calls).toHaveLength(4)
+    expect(pauses).toHaveLength(3)
+  })
+
+  test('a missing file or a folder in the way is not retried', () => {
+    for (const code of ['ENOENT', 'EISDIR']) {
+      const pauses: number[] = []
+      const { read, calls } = flaky([code])
+      expect(readOutcome('x.json', read, (ms) => pauses.push(ms))).toEqual({ code })
+      expect(calls).toHaveLength(1)
+      expect(pauses).toEqual([])
+    }
+  })
+
   test('a folder in the way is not mistaken for a missing file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'marki-guard-'))
     mkdirSync(join(dir, 'settings.json'))
