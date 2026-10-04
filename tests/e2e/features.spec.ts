@@ -16,7 +16,7 @@ test('undo after filing puts the original back and removes the filed copy', asyn
   h = await launch(dirs, { openFile: notePath, settings: team(dirs) })
 
   await expect(h.page.locator('.pm-content')).toContainText('Undo Me')
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
   expect(existsSync(join(dirs.raw, 'undo-me.md'))).toBe(true)

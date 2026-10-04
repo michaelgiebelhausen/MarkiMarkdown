@@ -9,6 +9,7 @@ export function BunchDialog({
   existing,
   preset,
   members,
+  bunches,
   defaultRawPath,
   missingMemberIds,
   onSave,
@@ -19,6 +20,8 @@ export function BunchDialog({
   /** Ticks (and a raw folder) to start a new bunch from, such as the note's current ticks. */
   preset?: { skillIds: string[]; domainIds: string[]; rawPath?: string }
   members: Member[]
+  /** Every bunch there is, so a second one cannot take a name already in use. */
+  bunches: Bunch[]
   defaultRawPath?: string
   missingMemberIds: string[]
   onSave: (bunch: Bunch) => void
@@ -53,9 +56,16 @@ export function BunchDialog({
 
   const save = () => {
     if (!valid) return
+    const trimmed = name.trim()
+    // Notes name their bunch, so two bunches must never answer to the same name.
+    const twin = bunches.find((b) => b.id !== existing?.id && b.name.trim().toLowerCase() === trimmed.toLowerCase())
+    if (twin) {
+      setError(`Another bunch is already called ${trimmed}.`)
+      return
+    }
     onSave({
       id: existing?.id ?? `b${Date.now().toString(36)}`,
-      name: name.trim(),
+      name: trimmed,
       emoji,
       rawPath,
       skillIds: pickedSkills,
@@ -89,7 +99,14 @@ export function BunchDialog({
         go to.
       </p>
       <Field label="Name">
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="thesis" />
+        <input
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value)
+            setError('')
+          }}
+          placeholder="thesis"
+        />
       </Field>
       <Field label="Icon" group>
         <EmojiPicker options={BUNCH_EMOJI} value={emoji} onChange={setEmoji} />

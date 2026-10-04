@@ -89,7 +89,7 @@ test('capture the interface', async () => {
   await page.waitForTimeout(300)
   await page.screenshot({ path: join(OUT as string, 'marki-06-bubble.png') })
 
-  await page.getByRole('button', { name: 'study bunch' }).click()
+  await page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(OUT as string, 'marki-03-selected.png') })
   await page.locator('.pane-bunch').screenshot({ path: join(OUT as string, 'marki-04-bunch-pane.png') })

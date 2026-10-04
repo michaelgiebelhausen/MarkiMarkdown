@@ -24,7 +24,7 @@ test('filing to a bunch writes one stamped copy into raw and moves the note ther
   const { harness, notePath, dirs } = await openWith()
   h = harness
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   const fileButton = h.page.getByRole('button', { name: 'File to study' })
   await expect(fileButton).toBeVisible()
   await fileButton.click()
@@ -51,7 +51,7 @@ test('filing to a bunch writes one stamped copy into raw and moves the note ther
   expect(text).toContain('Some content about memory.')
 
   // The YAML still names the bunch, so the File button stays in the top bar until Task 11 removes it.
-  await expect(h.page.getByRole('button', { name: 'study bunch' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(h.page.getByRole('button', { name: 'study bunch', exact: true })).toHaveAttribute('aria-pressed', 'true')
   expect(h.errors).toEqual([])
 })
 
@@ -59,7 +59,7 @@ test('after filing, edits keep going to the same file in raw', async () => {
   const { harness, dirs } = await openWith()
   h = harness
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
 
@@ -89,7 +89,7 @@ test('a bunch whose raw folder is missing is flagged and cannot be filed to', as
   })
   await expect(h.page.locator('.pm-content')).toContainText('Lecture Notes')
 
-  const chip = h.page.getByRole('button', { name: 'study bunch' })
+  const chip = h.page.getByRole('button', { name: 'study bunch', exact: true })
   await expect(chip).toHaveClass(/bunch-chip-unavailable/)
   await chip.click()
   await expect(h.page.getByRole('button', { name: 'File to study' })).toBeDisabled()
@@ -116,12 +116,12 @@ test('a member whose folder is missing is flagged in the grid but filing still w
 
   await expect(h.page.locator('.pane-bunch .board-warn')).toHaveCount(1)
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click({ button: 'right' })
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click({ button: 'right' })
   const bunchDialog = h.page.getByRole('dialog', { name: 'Edit bunch' })
   await expect(bunchDialog.locator('.board-warn')).toHaveCount(1)
   await h.page.keyboard.press('Escape')
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
 
@@ -145,7 +145,7 @@ test('a bunch with no raw folder uses the default and remembers it', async () =>
   })
   await expect(h.page.locator('.pm-content')).toContainText('Lecture Notes')
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
 
@@ -163,7 +163,7 @@ test('an empty bunch cannot be filed to and says why', async () => {
     openFile: notePath,
     settings: { ...team(dirs), bunches: [bunch('b1', 'lonely', '\u{1FAE5}', dirs.raw, [], [])] }
   })
-  await h.page.getByRole('button', { name: 'lonely bunch' }).click()
+  await h.page.getByRole('button', { name: 'lonely bunch', exact: true }).click()
   await expect(h.page.getByRole('button', { name: 'File to lonely' })).toBeDisabled()
   await expect(h.page.locator('.blocked')).toContainText('Add a skill or a domain')
   expect(h.errors).toEqual([])

@@ -98,6 +98,28 @@ describe('readTicks', () => {
     expect(readTicks('---\nskills: [writer, Writer]\n---\n', members).skillIds).toEqual(['s1'])
   })
 
+  test('matches a skill name written with spaces to the slugged name the roster saved', () => {
+    const roster: Member[] = [...members, { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }]
+    const r = readTicks('---\nskills: [Study Coach]\n---\n', roster)
+    expect(r.skillIds).toEqual(['s9'])
+    expect(r.unknown).toEqual([])
+    expect(readTicks('---\nskills: [study_coach]\n---\n', roster).skillIds).toEqual(['s9'])
+  })
+
+  test('matches a domain name ignoring case and runs of spaces', () => {
+    const roster: Member[] = [...members, { id: 'd9', kind: 'domain', name: 'Cell Biology', emoji: '🧪', path: '/x' }]
+    const r = readTicks('---\ndomains: ["cell   biology"]\n---\n', roster)
+    expect(r.domainIds).toEqual(['d9'])
+    expect(r.unknown).toEqual([])
+    expect(readTicks('---\ndomains: [cell-biology]\n---\n', roster).domainIds).toEqual(['d9'])
+  })
+
+  test('counts names that differ only in spaces and dashes once', () => {
+    const r = readTicks('---\nskills: [Study Coach, study-coach]\n---\n', members)
+    expect(r.skillNames).toEqual(['Study Coach'])
+    expect(r.unknown).toEqual([{ name: 'Study Coach', kind: 'skill' }])
+  })
+
   test('reads the bunch name and the tag count', () => {
     const r = readTicks('---\nbunch: "  Class prep "\ntags: [a, b, "#c"]\n---\n', members)
     expect(r.bunch).toBe('Class prep')
@@ -327,6 +349,20 @@ describe('applyTicks', () => {
     expect('agents' in d).toBe(false)
     expect(d.skills).toEqual(['writer', 'ghost'])
     expect(d.skill_paths).toEqual(['C:/me/skills/writer', ''])
+  })
+
+  test('writes the roster spelling for a name the student wrote differently', () => {
+    const roster: Member[] = [
+      ...members,
+      { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' },
+      { id: 'd9', kind: 'domain', name: 'Cell Biology', emoji: '🧪', path: '/me/domains/cell-biology' }
+    ]
+    const raw = '---\nskills: [Study Coach]\ndomains: [cell biology]\n---\n'
+    const d = data(applyTicks(raw, readTicks(raw, roster), roster, opts))
+    expect(d.skills).toEqual(['study-coach'])
+    expect(d.skill_paths).toEqual(['/me/skills/study-coach'])
+    expect(d.domains).toEqual(['Cell Biology'])
+    expect(d.domain_paths).toEqual(['/me/domains/cell-biology'])
   })
 
   test('writes the bunch name trimmed', () => {

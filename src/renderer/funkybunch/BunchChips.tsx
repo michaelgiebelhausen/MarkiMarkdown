@@ -67,7 +67,7 @@ function BunchChip({
           </span>
         )}
       </button>
-      <button type="button" className="bunch-chip-more" aria-label={`Edit ${bunch.name}`} onClick={() => onEdit(bunch.id)}>
+      <button type="button" className="bunch-chip-more" aria-label={`Edit ${bunch.name} bunch`} onClick={() => onEdit(bunch.id)}>
         …
       </button>
     </span>

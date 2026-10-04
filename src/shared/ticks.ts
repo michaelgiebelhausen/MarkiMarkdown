@@ -53,9 +53,19 @@ function empty(ok: boolean): TickReading {
   }
 }
 
-/** Adds a name unless the list already has it in any case. */
+/**
+ * The key two names are compared by: trimmed, lower case, and any run of spaces, dashes
+ * or underscores counted as one dash. The roster saves "Study Coach" as study-coach, and a
+ * student who types either spelling into the YAML means the same skill.
+ */
+export function nameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/[\s_-]+/g, '-')
+}
+
+/** Adds a name unless the list already has it under the same name key. */
 function addName(out: string[], name: string): boolean {
-  if (out.some((n) => n.toLowerCase() === name.toLowerCase())) return false
+  const key = nameKey(name)
+  if (out.some((n) => nameKey(n) === key)) return false
   out.push(name)
   return true
 }
@@ -93,8 +103,8 @@ function hasNonScalarItem(value: unknown): boolean {
 }
 
 function findMember(members: Member[], kind: MemberKind, name: string): Member | undefined {
-  const lower = name.toLowerCase()
-  return members.find((m) => m.kind === kind && m.name.toLowerCase() === lower)
+  const key = nameKey(name)
+  return members.find((m) => m.kind === kind && nameKey(m.name) === key)
 }
 
 /**

@@ -67,7 +67,7 @@ export function SkillDomainGrid(props: Props) {
         <span aria-hidden="true">{member.emoji}</span>
         <span className="board-name">{member.name}</span>
       </button>
-      <button type="button" className="board-more" aria-label={`Edit ${member.name}`} onClick={() => props.onEditMember(member.id)}>
+      <button type="button" className="board-more" aria-label={`Edit ${member.name} ${member.kind}`} onClick={() => props.onEditMember(member.id)}>
         …
       </button>
       {warn(member.id)}

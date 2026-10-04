@@ -928,6 +928,7 @@ export default function App() {
           existing={dialog.existing}
           preset={dialog.preset}
           members={members}
+          bunches={bunches}
           defaultRawPath={settings.defaultRawPath}
           missingMemberIds={missingMemberIds}
           onSave={upsertBunch}

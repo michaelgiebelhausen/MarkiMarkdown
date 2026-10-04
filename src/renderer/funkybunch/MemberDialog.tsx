@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Modal, Field } from '@renderer/ui/Modal'
 import type { Member, MemberKind } from '@shared/types'
 import { baseName, samePath } from '@shared/paths'
+import { nameKey } from '@shared/ticks'
 
 export const SKILL_EMOJI = ['🤖', '🎓', '🔬', '✍️', '📚', '🧑‍🏫', '✅', '🔍', '🧮', '🗣️']
 export const DOMAIN_EMOJI = ['📁', '📕', '🚀', '🎸', '🗄️', '💡', '📓', '🧠', '🗂️', '⭐']
@@ -107,10 +108,9 @@ export function MemberDialog({
       kind === 'skill'
         ? trimmed.toLowerCase().replace(/\s+/g, '-') || 'skill'
         : trimmed || 'Folder'
-    // Notes list members by name, so two of a kind must never share one.
-    const twin = siblings.find(
-      (m) => m.id !== existing?.id && m.kind === kind && m.name.toLowerCase() === finalName.toLowerCase()
-    )
+    // Notes list members by name, so two of a kind must never share one. Names are
+    // compared the way notes are read, so "Cell Biology" and cell-biology are one name.
+    const twin = siblings.find((m) => m.id !== existing?.id && m.kind === kind && nameKey(m.name) === nameKey(finalName))
     if (twin) {
       setError(`Another ${kind} is already called ${finalName}.`)
       return

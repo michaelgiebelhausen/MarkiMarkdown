@@ -55,7 +55,7 @@ test('the packaged application starts, edits and files a note', async () => {
   await expect(page.locator('.cm-content')).toContainText('Edited in the packaged app.')
 
   // file it
-  await page.getByRole('button', { name: 'study bunch' }).click()
+  await page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await page.getByRole('button', { name: 'File to study' }).click()
   await expect(page.locator('.toast')).toContainText('Filed to study', { timeout: 25000 })
 

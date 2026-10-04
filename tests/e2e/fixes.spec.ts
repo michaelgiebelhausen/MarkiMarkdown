@@ -22,7 +22,7 @@ test('dragging the note onto a bunch chip applies that bunch', async () => {
   const { harness, dirs } = await openWith('# Drag me\n\nBody.\n', 'drag.md')
   h = harness
 
-  await h.page.locator('.chip').dragTo(h.page.getByRole('button', { name: 'study bunch' }))
+  await h.page.locator('.chip').dragTo(h.page.getByRole('button', { name: 'study bunch', exact: true }))
   await expect(h.page.locator('.cm-content')).toContainText('bunch: study')
   expect(existsSync(join(dirs.raw, 'drag.md'))).toBe(false)
   expect(h.errors).toEqual([])
@@ -71,7 +71,7 @@ test('a note with unreadable properties cannot be given a bunch', async () => {
   const { harness, dirs } = await openWith('---\ntitle: My note: draft\n---\n\n# Body\n', 'broken.md')
   h = harness
   await expect(h.page.locator('.props-broken')).toBeVisible()
-  await expect(h.page.getByRole('button', { name: 'study bunch' })).toBeDisabled()
+  await expect(h.page.getByRole('button', { name: 'study bunch', exact: true })).toBeDisabled()
   await expect(h.page.getByRole('button', { name: /^File to/ })).toHaveCount(0)
   expect(existsSync(join(dirs.raw, 'broken.md'))).toBe(false)
   expect(h.errors).toEqual([])
@@ -81,7 +81,7 @@ test('the stamp written at filing survives the next save', async () => {
   const { harness, dirs } = await openWith('# Keep the stamp\n\nBody.\n', 'stamp.md')
   h = harness
 
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
+  await h.page.getByRole('button', { name: 'study bunch', exact: true }).click()
   await h.page.getByRole('button', { name: 'File to study' }).click()
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
 

@@ -134,13 +134,16 @@ button:focus-visible,
   padding: 3px 10px; border-radius: 999px; font-size: 12.5px;
   border: 1px solid var(--line); background: var(--bg-raised); color: var(--text);
 }
-.bunch-chip:hover { border-color: var(--accent); }
+.bunch-chip:hover:not(:disabled) { border-color: var(--accent); }
 .bunch-chip:disabled { opacity: 0.45; cursor: default; }
 .bunch-chip-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 550; }
 .bunch-chip-unavailable { opacity: 0.6; }
 .bunch-chip-drop { transform: scale(1.06); border-color: var(--accent); }
 .bunch-chip-more, .board-more { visibility: hidden; color: var(--muted); padding: 0 4px; font-size: 12px; }
-.bunch-chip-wrap:hover .bunch-chip-more, .board-skill:hover .board-more, .board-domain:hover .board-more { visibility: visible; }
+/* Shown on hover, and whenever the keyboard is on the chip, the name or the … itself. */
+.bunch-chip-wrap:hover .bunch-chip-more, .bunch-chip-wrap:focus-within .bunch-chip-more,
+.board-skill:hover .board-more, .board-skill:focus-within .board-more,
+.board-domain:hover .board-more, .board-domain:focus-within .board-more { visibility: visible; }
 
 .unknown-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .unknown-chip {
@@ -224,7 +227,7 @@ button:focus-visible,
 .board { border-collapse: separate; border-spacing: 4px; }
 .board th, .board td { text-align: center; font-size: 12.5px; padding: 4px 6px; border-radius: 6px; font-weight: 500; }
 .board-corner { width: 90px; }
-.board-skill { background: var(--accent-soft); min-width: 64px; }
+.board-skill { min-width: 64px; }
 .board-domain { text-align: left; white-space: nowrap; }
 .board-name { display: block; font-size: 11px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-domain .board-name { display: inline; margin-left: 4px; max-width: none; }
@@ -238,13 +241,12 @@ button:focus-visible,
 }
 .board-cell:hover { border-color: var(--accent); color: var(--text); }
 .board-cell-hot { color: var(--text); font-weight: 600; background: var(--accent-soft); }
-.board-cell-bunch { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .board-warn { color: var(--danger); font-weight: 700; margin-left: 3px; }
-.board-empty { padding: 18px 8px; text-align: center; color: var(--muted); }
-.board-empty p { margin: 0 0 12px; }
 /* After the board rules, so a ticked square or name wins over a hot one. */
-.board-on { background: var(--accent-soft); color: var(--accent); }
+.board-on { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.board-on .board-name { color: var(--accent); font-weight: 600; }
 .board-cell-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.board-cell-on:hover { color: #fff; }
 .board-add { background: none; }
 
 /* ---------------- panes ---------------- */
