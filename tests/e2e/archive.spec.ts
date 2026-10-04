@@ -287,3 +287,15 @@ test('archiving a note with no id gives it one, in the working file, the copy an
   await expect(h.page.locator('.chip-places')).toHaveText('archived 1×')
   expect(h.errors).toEqual([])
 })
+
+test('a hand-typed number id is recorded exactly as written', async () => {
+  const { dirs } = await openNote('---\nid: 007\nskills: [librarian]\ndomains: [thesis]\n---\n# Agent\n')
+  await archiveBox().check()
+  await saveAndArchive().click()
+  await expect(h.page.locator('.toast')).toContainText('Saved and archived', { timeout: 20000 })
+
+  const ledger = JSON.parse(readFileSync(join(dirs.userData, 'ledger.json'), 'utf8')) as { noteId: string }[]
+  expect(ledger.map((e) => e.noteId)).toEqual(['007'])
+  await expect(h.page.locator('.chip-places')).toHaveText('archived 1×')
+  expect(h.errors).toEqual([])
+})

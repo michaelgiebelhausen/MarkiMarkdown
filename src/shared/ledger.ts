@@ -1,13 +1,13 @@
 import type { LedgerEntry } from './types'
+import { scalarSource } from './markdown/frontmatter'
 
 /**
- * The note id the ledger records for a front matter `id`: the text, or a number's digits
- * (a hand-typed id: 20261004 reads as a number), else empty.
+ * The note id the ledger records for a note's front matter (the raw block, fences and
+ * all): its `id` exactly as written, so a hand-typed `id: 007` is recorded as 007, not 7.
+ * Empty when there is no front matter, no id, or the id is not text or a number.
  */
-export function noteIdOf(id: unknown): string {
-  if (typeof id === 'string') return id
-  if (typeof id === 'number' && Number.isFinite(id)) return String(id)
-  return ''
+export function noteIdOf(frontMatterRaw: string | null): string {
+  return scalarSource(frontMatterRaw, 'id') ?? ''
 }
 
 /** Member ids must not contain `|`, or two distinct pairs could collide on the same key. */

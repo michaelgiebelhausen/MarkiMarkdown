@@ -331,9 +331,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
 
     // 3. the ledger, which feeds the grid counts. The copy now exists, so it is recorded
     // even if another note was opened meanwhile: nothing here reads or touches the store.
-    const front = parseFrontMatter(split.raw ?? '')
     const entry: LedgerEntry = {
-      noteId: front.ok ? noteIdOf(front.data.id) : '',
+      noteId: noteIdOf(split.raw),
       bunchId: activeBunch?.id ?? '',
       skillIds: reading.skillIds,
       domainIds: reading.domainIds,

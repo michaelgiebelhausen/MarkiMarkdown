@@ -19,7 +19,7 @@ import { PaneLayout } from './layout/PaneLayout'
 import { togglePane, type PaneKey } from './layout/paneMath'
 import { ToastStack, type ToastMessage } from './ui/Toast'
 import { samePath } from '@shared/paths'
-import { parseFrontMatter, mergeFrontMatter } from '@shared/markdown/frontmatter'
+import { mergeFrontMatter } from '@shared/markdown/frontmatter'
 import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtToMd'
 import { tidyMarkdown } from '@shared/markdown/tidy'
 import { archiveCount, noteIdOf } from '@shared/ledger'
@@ -154,12 +154,7 @@ export default function App() {
 
   /* ---------------- note identity ---------------- */
 
-  const frontMatter = useMemo(() => {
-    if (doc.frontMatterRaw === null) return { ok: true as const, data: {} as Record<string, unknown> }
-    return parseFrontMatter(doc.frontMatterRaw)
-  }, [doc.frontMatterRaw])
-
-  const noteId = frontMatter.ok ? noteIdOf(frontMatter.data.id) : ''
+  const noteId = useMemo(() => noteIdOf(doc.frontMatterRaw), [doc.frontMatterRaw])
 
   const ticks = useMemo(() => readTicks(doc.frontMatterRaw, members), [doc.frontMatterRaw, members])
 

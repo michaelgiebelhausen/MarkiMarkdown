@@ -6,7 +6,7 @@
  *  - never drop unknown keys, comments or quoting the student wrote
  *  - never coerce dates into Date objects (that silently rewrites `created: 2026-08-21`)
  */
-import { Document, isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
+import { Document, isAlias, isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
 
 export interface SplitResult {
   /** The whole block including both fences and the trailing newline, or null. */
@@ -108,6 +108,26 @@ export function parseFrontMatter(raw: string): ParseResult {
   if (js === null || js === undefined) return { ok: true, data: {} }
   if (typeof js !== 'object' || Array.isArray(js)) return { ok: true, data: {} }
   return { ok: true, data: js as FrontMatterData }
+}
+
+/**
+ * A top-level key's value exactly as the note writes it, when that value is a piece of
+ * text or a number: `id: 007` gives "007" and `id: 0x1F` gives "0x1F", where the parsed
+ * data holds 7 and 31. Text gives its text. Anything else (true, null, nothing, a list, a
+ * map, a missing key, or YAML that can't be read) gives null. Of two copies of the key,
+ * the last counts, as it does in the parsed data.
+ */
+export function scalarSource(raw: string | null, key: string): string | null {
+  if (raw === null) return null
+  const doc = readDocument(raw)
+  if (!doc || !isMap(doc.contents)) return null
+  const pair = doc.contents.items.filter((p) => isScalar(p.key) && p.key.value === key).pop()
+  let node: unknown = pair?.value
+  if (isAlias(node)) node = node.resolve(doc)
+  if (!isScalar(node)) return null
+  if (typeof node.value === 'string') return node.value
+  if (typeof node.value === 'number') return typeof node.source === 'string' ? node.source : String(node.value)
+  return null
 }
 
 /** Keys a second-brain script greps line by line, so they are written one item per line. */

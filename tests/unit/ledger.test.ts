@@ -1,17 +1,46 @@
 import { describe, expect, test } from 'vitest'
 import { archiveCount, isLegacyLedger, noteIdOf, normaliseLedgerEntry, pairCounts, pairKey } from '@shared/ledger'
-import { parseFrontMatter } from '@shared/markdown/frontmatter'
 import type { LedgerEntry } from '@shared/types'
 
 describe('noteIdOf', () => {
-  test('reads a text id, and a number id as its digits', () => {
-    expect(noteIdOf('01ABC')).toBe('01ABC')
-    const parsed = parseFrontMatter('---\nid: 20261004\n---\n')
-    expect(parsed.ok && noteIdOf(parsed.data.id)).toBe('20261004')
+  const idIn = (yaml: string) => noteIdOf(`---\n${yaml}\n---\n`)
+
+  test('reads a text id as its text', () => {
+    expect(idIn('id: 01ABC')).toBe('01ABC')
+    expect(idIn("id: '007'")).toBe('007')
+    expect(idIn('id: "0x1F"')).toBe('0x1F')
+    expect(idIn('id: !!str 007')).toBe('007')
+  })
+
+  test('keeps a number id exactly as the note writes it, not as YAML reads it', () => {
+    expect(idIn('id: 20261004')).toBe('20261004')
+    expect(idIn('id: 007')).toBe('007')
+    expect(idIn('id: 0x1F')).toBe('0x1F')
+    expect(idIn('id: 0o17')).toBe('0o17')
+    expect(idIn('id: 1e3')).toBe('1e3')
+    expect(idIn('id: +12')).toBe('+12')
+    expect(idIn('id: .inf')).toBe('.inf')
+    expect(idIn('id: 12   # typed by hand')).toBe('12')
+  })
+
+  test('works with Windows line endings', () => {
+    expect(noteIdOf('---\r\nid: 007\r\ntitle: Note\r\n---\r\n')).toBe('007')
+  })
+
+  test('follows an alias to the value it names', () => {
+    expect(idIn('first: &n 007\nid: *n')).toBe('007')
+  })
+
+  test('takes the last of two ids, as the parsed YAML does', () => {
+    expect(idIn('id: 001\nid: 002')).toBe('002')
   })
 
   test('anything else is no id', () => {
-    for (const value of [undefined, null, true, [], {}]) expect(noteIdOf(value)).toBe('')
+    for (const yaml of ['id: true', 'id: false', 'id:', 'id: ~', 'id: null', "id: ''", 'id: [1]', 'id: {a: 1}', 'title: no id here', 'id: "', 'just a line']) {
+      expect(idIn(yaml), yaml).toBe('')
+    }
+    expect(noteIdOf(null)).toBe('')
+    expect(noteIdOf('')).toBe('')
   })
 })
 
