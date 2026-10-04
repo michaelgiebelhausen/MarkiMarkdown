@@ -151,6 +151,27 @@ test('an untitled note asks for a folder on its first save and is named from its
   await expect.poll(() => existsSync(join(dirs.downloads, 'cell-walls.md')), { timeout: 20000 }).toBe(true)
   expect(readFileSync(join(dirs.downloads, 'cell-walls.md'), 'utf8')).toContain('Plants have them.')
   await expect(h.page.locator('.chip-name')).toHaveText('cell-walls.md')
+  await expect(h.page.locator('.toast')).toContainText('Saved to downloads.')
+  expect(h.errors).toEqual([])
+})
+
+test('a note opened from a .txt is saved as a .md named after it, beside it, and says so', async () => {
+  const dirs = prepare()
+  const txt = join(dirs.downloads, 'notes.txt')
+  const original = '# Lecture three\n\nJust some text.\n'
+  writeFileSync(txt, original, 'utf8')
+  h = await launch(dirs, { openFile: txt, settings: { ...team(dirs), defaultRawPath: dirs.raw } })
+  await expect(h.page.locator('.pm-content')).toContainText('Just some text.')
+  await saveButton().click()
+
+  await expect(h.page.locator('.toast')).toContainText(
+    'Saved as notes.md next to notes.txt. The .txt file is unchanged.',
+    { timeout: 20000 }
+  )
+  await expect(h.page.locator('.toast').getByRole('button', { name: 'Show', exact: true })).toBeVisible()
+  expect(readFileSync(join(dirs.downloads, 'notes.md'), 'utf8')).toContain('Just some text.')
+  expect(existsSync(join(dirs.downloads, 'lecture-three.md'))).toBe(false)
+  expect(readFileSync(txt, 'utf8')).toBe(original)
   expect(h.errors).toEqual([])
 })
 
@@ -241,5 +262,22 @@ test('a 1.1 note opens with its ticks lit, and the first tick moves it to the ne
   await expect(source).toContainText('domains:')
   await expect(source).toContainText('domain/thesis')
   await expect(source).not.toContainText('agent/librarian')
+  expect(h.errors).toEqual([])
+})
+
+test('archiving a note with no id gives it one, in the working file, the copy and the ledger', async () => {
+  const { dirs, notePath } = await openNote(
+    '---\nagents:\n  - librarian\nartifacts:\n  - thesis\ntags: [agent/librarian, artifact/thesis]\n---\n# Old\n'
+  )
+  await archiveBox().check()
+  await saveAndArchive().click()
+  await expect(h.page.locator('.toast')).toContainText('Saved and archived', { timeout: 20000 })
+
+  const copy = readFileSync(join(dirs.raw, `essay-${today()}.md`), 'utf8')
+  const id = /^id: (\S+)$/m.exec(copy)?.[1]
+  expect(id).toBeTruthy()
+  expect(readFileSync(notePath, 'utf8')).toContain(`id: ${id}`)
+  // the ledger entry carries the id, so this note's own count goes up
+  await expect(h.page.locator('.chip-places')).toHaveText('archived 1×')
   expect(h.errors).toEqual([])
 })

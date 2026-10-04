@@ -3,7 +3,8 @@ import type { DocumentStore } from './document'
 import type { Bunch, LedgerEntry, Member } from '@shared/types'
 import { readTicks, type TickReading } from '@shared/ticks'
 import { BLOCK_REASONS, planSave, type SavePlan } from '@shared/archive'
-import { addArchived, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
+import { ulid } from 'ulid'
+import { addArchived, mergeFrontMatter, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
 import { baseName, dirName, samePath } from '@shared/paths'
 import { localDate, nowLocalIso } from '@shared/time'
 import type { ToastMessage } from '@renderer/ui/Toast'
@@ -133,12 +134,29 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   /** True while the note that was open when `generation` was read is still the one open. */
   const sameNote = (generation: number) => store.loadGeneration === generation
 
+  /** Writes an id into the front matter when it has none (and can be read). */
+  const addMissingId = () => {
+    const raw = store.state.frontMatterRaw
+    if (raw === null) return
+    const front = parseFrontMatter(raw)
+    if (!front.ok) return
+    const id = front.data.id
+    if (id !== null && id !== undefined && String(id).trim().length > 0) return
+    store.commitUndoGroup()
+    store.setFrontMatter(mergeFrontMatter(raw, { id: ulid() }, store.state.eol), null)
+    store.commitUndoGroup()
+  }
+
   const runSave = async () => {
     // Decided once, at the click: the text written to the working file and copied to the
     // archive, the ticks the ledger records, and whether to archive at all. Typing during
     // the save, or unticking the box, counts for the next save, not this one.
     const generation = store.loadGeneration
     const archiving = archive
+    // An archived note needs an id, so the copy and the ledger can be traced back to it.
+    // A 1.1 note or a hand-typed one may have none: give it one now, as its own undo step,
+    // so the working file and the copy both carry it.
+    if (archiving && plan.canArchive) addMissingId()
     const text = store.fullText()
     const split = splitFrontMatter(text)
     const reading = readTicks(split.raw, members)
@@ -153,6 +171,9 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     // 1. the working version
     let path = store.state.paths[0]
     if (!path) {
+      // Opened from a .txt (or .text) file: the Markdown version is a new file named after
+      // it, and the original is never touched. An untitled note is named from its heading.
+      const source = store.state.originalPath
       let dir = workingDir
       if (!dir) {
         const picked = await window.marki.dialogs.pickFolder()
@@ -161,7 +182,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
         dir = picked.path
         setPendingDir(dir)
       }
-      const written = await window.marki.files.writeNew(dir, suggestName(split.body, store.state.fileName), text)
+      const name = source ? store.state.fileName : suggestName(split.body, store.state.fileName)
+      const written = await window.marki.files.writeNew(dir, name, text)
       if (stopped()) return
       if (!written.ok) {
         pushToast({ text: written.message, tone: 'warn' })
@@ -170,6 +192,20 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       store.afterFiling([written.path], { written: text })
       store.setFileName(baseName(written.path) || store.state.fileName)
       path = written.path
+      const savedPath = written.path
+      const folder = baseName(dir) || dir
+      if (source) {
+        const sourceName = baseName(source)
+        const where = samePath(dirName(savedPath), dirName(source)) ? `next to ${sourceName}` : `in ${folder}`
+        const ext = /\.[^.]+$/.exec(sourceName)?.[0] ?? ''
+        pushToast({
+          text: `Saved as ${baseName(savedPath)} ${where}. The ${ext || 'original'} file is unchanged.`,
+          actionLabel: 'Show',
+          onAction: () => void window.marki.shell.showItem(savedPath)
+        })
+      } else {
+        pushToast({ text: `Saved to ${folder}.` })
+      }
     } else {
       const saved = await window.marki.files.saveAll([path], text)
       if (stopped()) return
