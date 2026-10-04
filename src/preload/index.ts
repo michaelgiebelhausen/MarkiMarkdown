@@ -77,7 +77,11 @@ const api = {
     openLogs: (): Promise<Result<object>> => ipcRenderer.invoke('log:open-folder')
   },
   windows: {
-    create: (): Promise<Result<object>> => ipcRenderer.invoke('window:new')
+    create: (): Promise<Result<object>> => ipcRenderer.invoke('window:new'),
+    /** Whether this window's note has unsaved changes, and its name, so closing can ask first. */
+    setDirty: (dirty: boolean, name: string): void => ipcRenderer.send('window:set-dirty', dirty, name),
+    /** The note was saved after the student chose Save on closing: close for real now. */
+    closeNow: (): void => ipcRenderer.send('window:close-now')
   },
   clipboard: {
     readText: (): Promise<Result<{ text: string }>> => ipcRenderer.invoke('clipboard:read-text')

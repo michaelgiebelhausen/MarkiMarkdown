@@ -53,6 +53,58 @@ function safeBounds(): { width: number; height: number; x?: number; y?: number }
   return { width: Math.max(900, bounds.width), height: Math.max(560, bounds.height), x: bounds.x, y: bounds.y }
 }
 
+/* ------------------------------------------------------------------ *
+ * Never close a window over unsaved changes without asking
+ * ------------------------------------------------------------------ */
+/** Windows whose note has unsaved changes, by window id, with the note's name. */
+const unsaved = new Map<number, string>()
+/** Windows whose note was saved after the student chose Save on closing. */
+const closeApproved = new Set<number>()
+/** Windows saving before they close, and whether a quit was waiting for them. */
+const quitAfterSave = new Map<number, boolean>()
+let quitting = false
+app.on('before-quit', () => {
+  quitting = true
+})
+
+const SAVE = 0
+const DONT_SAVE = 1
+const CANCEL = 2
+
+function askToSave(win: BrowserWindow, name: string): number {
+  try {
+    return dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Save', "Don't save", 'Cancel'],
+      defaultId: SAVE,
+      cancelId: CANCEL,
+      message: `Save changes to ${name}?`,
+      detail: "If you don't save, your changes will be lost."
+    })
+  } catch (error) {
+    // Keeping the window open is the only answer that can't lose the note.
+    log.warn('Could not ask about unsaved changes', error)
+    return CANCEL
+  }
+}
+
+ipcMain.on('window:set-dirty', (event, dirty: unknown, name: unknown) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) return
+  if (dirty === true) unsaved.set(win.id, typeof name === 'string' && name.length > 0 ? name : 'this note')
+  else unsaved.delete(win.id)
+})
+
+ipcMain.on('window:close-now', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win || win.isDestroyed()) return
+  const resumeQuit = quitAfterSave.get(win.id) ?? false
+  quitAfterSave.delete(win.id)
+  closeApproved.add(win.id)
+  win.close()
+  if (resumeQuit) app.quit()
+})
+
 export function createWindow(openPath?: string): BrowserWindow {
   const win = new BrowserWindow({
     ...safeBounds(),
@@ -73,11 +125,35 @@ export function createWindow(openPath?: string): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
-  win.on('close', () => {
+  const id = win.id
+  win.on('close', (event) => {
+    // Unsaved changes: ask first. Save hands the save to the window, which closes it again
+    // through window:close-now once the note is saved; a failed save leaves it open.
+    const note = unsaved.get(id)
+    if (note && !closeApproved.has(id)) {
+      const answer = askToSave(win, note)
+      if (answer !== DONT_SAVE) {
+        event.preventDefault()
+        // A quit waits for this window: carry on with it only once the note is saved.
+        const resumeQuit = quitting
+        quitting = false
+        if (answer === SAVE) {
+          quitAfterSave.set(id, resumeQuit)
+          win.webContents.send('menu:action', 'save-then-close')
+        }
+        return
+      }
+    }
     const [width, height] = win.getSize()
     const [x, y] = win.getPosition()
     // The window is going away, so there is no one left to tell; writeSettings logs a failure.
     writeSettings({ windowBounds: { width, height, x, y } } as never)
+  })
+
+  win.on('closed', () => {
+    unsaved.delete(id)
+    closeApproved.delete(id)
+    quitAfterSave.delete(id)
   })
 
   // Spelling suggestions, and never a browser context menu

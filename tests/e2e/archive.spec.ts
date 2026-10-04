@@ -216,6 +216,10 @@ test('a note opened mid-save stops that save and is left alone', async () => {
   await holdFolderPicker(target)
   await saveButton().click()
 
+  // Opening over unsaved changes asks first: answer "Don't save".
+  await h.app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox
+  })
   await h.app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('file:open-path', p), other)
   await expect(h.page.locator('.pm-content')).toContainText('Second note.')
   await releaseFolderPicker()

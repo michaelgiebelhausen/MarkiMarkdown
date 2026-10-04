@@ -69,6 +69,14 @@ export async function launch(
     page,
     errors,
     close: async () => {
+      // A note left unsaved would ask "Save changes?" on the way out: answer Don't save.
+      try {
+        await app.evaluate(({ dialog }) => {
+          dialog.showMessageBoxSync = (() => 1) as typeof dialog.showMessageBoxSync
+        })
+      } catch {
+        /* the app may already have gone */
+      }
       await app.close()
       try {
         rmSync(dirs.root, { recursive: true, force: true })

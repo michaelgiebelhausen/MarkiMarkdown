@@ -152,6 +152,120 @@ test('Ctrl+S pressed during a save queues exactly one more save', async () => {
   expect(h.errors).toEqual([])
 })
 
+/** Answers the next "Save changes?" questions with this button, and counts how often it was asked. */
+async function answerSaveChanges(button: number) {
+  await h.app.evaluate(({ dialog }, b) => {
+    const g = globalThis as unknown as { asked: number }
+    g.asked = 0
+    dialog.showMessageBox = (async () => {
+      g.asked += 1
+      return { response: b, checkboxChecked: false }
+    }) as typeof dialog.showMessageBox
+    dialog.showMessageBoxSync = (() => {
+      g.asked += 1
+      return b
+    }) as typeof dialog.showMessageBoxSync
+  }, button)
+}
+
+const asked = () => h.app.evaluate(() => (globalThis as unknown as { asked: number }).asked)
+
+async function openPath(path: string) {
+  await h.app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('file:open-path', p), path)
+}
+
+test('opening another note over an unsaved untitled one asks first', async () => {
+  const dirs = prepare()
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  h = await launch(dirs, { settings: { ...team(dirs), defaultRawPath: dirs.raw } })
+  await h.page.locator('.cm-content').click()
+  await h.page.keyboard.type('# Draft\n\nNot saved anywhere yet.')
+
+  await answerSaveChanges(2) // Cancel
+  await openPath(other)
+  await expect.poll(asked).toBe(1)
+  await h.page.waitForTimeout(300)
+  await expect(h.page.locator('.pm-content')).toContainText('Not saved anywhere yet.')
+  await expect(h.page.locator('.chip-name')).toHaveText('Untitled.md')
+
+  await answerSaveChanges(1) // Don't save
+  await openPath(other)
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.')
+  await expect(h.page.locator('.chip-name')).toHaveText('other.md')
+  expect(await asked()).toBe(1)
+  expect(h.errors).toEqual([])
+})
+
+test('choosing Save before opening another note saves first', async () => {
+  const { dirs, notePath } = await openNote({ autosave: false })
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  await typeAtEnd(' Keep this.')
+  await answerSaveChanges(0) // Save
+  await openPath(other)
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.')
+  expect(readFileSync(notePath, 'utf8')).toContain('Keep this.')
+
+  // a clean note opens another without asking
+  await answerSaveChanges(2)
+  await openPath(notePath)
+  await expect(h.page.locator('.chip-name')).toHaveText('essay.md')
+  expect(await asked()).toBe(0)
+  expect(h.errors).toEqual([])
+})
+
+/** Opens a second window, so closing the first one does not end the app, and returns the first one's id. */
+async function secondWindow(): Promise<number> {
+  const first = await h.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id)
+  await h.page.evaluate(() => window.marki.windows.create())
+  await expect.poll(() => h.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(2)
+  return first
+}
+
+const isOpen = (id: number) =>
+  h.app.evaluate(({ BrowserWindow }, i) => {
+    const win = BrowserWindow.fromId(i)
+    return win !== null && !win.isDestroyed()
+  }, id)
+
+async function closeWindow(id: number) {
+  await h.app.evaluate(({ BrowserWindow }, i) => BrowserWindow.fromId(i)?.close(), id)
+}
+
+test('closing a window with unsaved changes asks: Cancel keeps it, Save saves and then closes', async () => {
+  const { notePath } = await openNote({ autosave: false })
+  const first = await secondWindow()
+  await typeAtEnd(' Unsaved words.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(2) // Cancel
+  await closeWindow(first)
+  expect(await asked()).toBe(1)
+  expect(await isOpen(first)).toBe(true)
+  await expect(h.page.locator('.cm-content')).toContainText('Unsaved words.')
+
+  await answerSaveChanges(0) // Save
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(readFileSync(notePath, 'utf8')).toContain('Unsaved words.')
+  expect(await asked()).toBe(1)
+})
+
+test("closing a window with unsaved changes and choosing Don't save closes it and leaves the file", async () => {
+  const { notePath } = await openNote({ autosave: false })
+  const first = await secondWindow()
+  await typeAtEnd(' Throw these away.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(1) // Don't save
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(readFileSync(notePath, 'utf8')).toBe('# Essay\n\nFirst draft.\n')
+})
+
 test('a failed autosave says so once, and keeps the text', async () => {
   const { notePath } = await openNote()
   await h.app.evaluate(({ ipcMain }) => {
