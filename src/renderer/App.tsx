@@ -26,23 +26,11 @@ import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtT
 import { tidyMarkdown } from '@shared/markdown/tidy'
 import { buildStamp } from '@shared/bunch'
 import { lastBunchFor } from '@shared/ledger'
+import { nowLocalIso } from '@shared/time'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
 const sync = new SyncController()
-
-function nowLocalIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offset = -d.getTimezoneOffset()
-  const sign = offset >= 0 ? '+' : '-'
-  const abs = Math.abs(offset)
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
-    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
-  )
-}
 
 type DialogState =
   | { kind: 'member'; existing?: Member; presetKind?: MemberKind; from?: 'board' }

@@ -232,3 +232,13 @@ export function stampNote(text: string, stamp: Stamp): string {
   const merged = mergeFrontMatter(raw, patch)
   return merged + body
 }
+
+/**
+ * The text of an archive copy: the working text with `archived:` set. The body bytes
+ * are untouched. Returns null when the front matter cannot be read, so nothing is written.
+ */
+export function addArchived(text: string, archivedAt: string): string | null {
+  const { raw, body } = splitFrontMatter(text)
+  if (raw !== null && !parseFrontMatter(raw).ok) return null
+  return mergeFrontMatter(raw, { archived: archivedAt }) + body
+}

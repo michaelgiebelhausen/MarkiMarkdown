@@ -3,7 +3,8 @@ import {
   splitFrontMatter,
   parseFrontMatter,
   mergeFrontMatter,
-  stampNote
+  stampNote,
+  addArchived
 } from '@shared/markdown/frontmatter'
 
 describe('splitFrontMatter', () => {
@@ -355,5 +356,30 @@ describe('stampNote with a bunch', () => {
     const src = '---\ntags: [agent/old]\n---\nbody\n'
     const out = stampNote(src, { ...base, ...who })
     expect(out).not.toContain('tags')
+  })
+})
+
+describe('addArchived', () => {
+  test('adds archived and leaves everything else, body included, alone', () => {
+    const text = '---\nid: 01A\nskills:\n  - writer\n---\n# Body\n\nText.\n'
+    const out = addArchived(text, '2026-10-04T15:20:00-04:00') as string
+    expect(out).toContain('id: 01A')
+    expect(out).toContain('skills:\n  - writer')
+    expect(out).toContain('archived: 2026-10-04T15:20:00-04:00')
+    expect(out.endsWith('# Body\n\nText.\n')).toBe(true)
+  })
+
+  test('replaces an archived value copied from an earlier archive', () => {
+    const out = addArchived('---\narchived: old\n---\nx\n', 'new') as string
+    expect(out).toContain('archived: new')
+    expect(out).not.toContain('old')
+  })
+
+  test('gives a note with no front matter a block', () => {
+    expect(addArchived('x\n', 'now')).toBe('---\narchived: now\n---\nx\n')
+  })
+
+  test('refuses unreadable front matter', () => {
+    expect(addArchived('---\ntitle: a: b\n---\nx\n', 'now')).toBeNull()
   })
 })
