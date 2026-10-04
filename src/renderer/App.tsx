@@ -174,6 +174,7 @@ export default function App() {
     paths: doc.paths,
     originalPath: doc.originalPath,
     ticks,
+    members,
     activeBunch,
     defaultRawPath: settings?.defaultRawPath ?? '',
     confirmedFileMoves: settings?.confirmedFileMoves ?? false,
@@ -368,17 +369,18 @@ export default function App() {
 
   // Save, Ctrl+S and the pane's Save button all go through saveFlow.save.
 
-  // Autosave: quiet, and only for notes that already have a home.
+  // Autosave: quiet, and only for notes that already have a home. It waits while a save,
+  // a move or a folder choice is under way, and tries again once that has finished
+  // (settled), so text typed during a save is autosaved too. saveFlow.autosave writes
+  // exactly the text it read and marks only that as saved.
+  const autosaveRef = useRef(saveFlow.autosave)
+  autosaveRef.current = saveFlow.autosave
   useEffect(() => {
-    if (!settings?.autosave) return
+    if (!settings?.autosave || saveFlow.busy) return
     if (!doc.dirty || doc.paths.length === 0 || doc.isPlainText) return
-    const timer = window.setTimeout(() => {
-      window.marki.files.saveAll(store.state.paths, store.fullText()).then((result) => {
-        if (result.ok) store.markSaved()
-      })
-    }, 2000)
+    const timer = window.setTimeout(() => void autosaveRef.current(), 2000)
     return () => window.clearTimeout(timer)
-  }, [doc.dirty, doc.version, doc.paths.length, doc.isPlainText, settings?.autosave])
+  }, [doc.dirty, doc.version, doc.paths.length, doc.isPlainText, settings?.autosave, saveFlow.busy, saveFlow.settled])
 
   /* ---------------- actions from the menu and the top bar ---------------- */
 
@@ -467,12 +469,16 @@ export default function App() {
         case 'open': return void openFile()
         case 'save': return void saveFlow.save()
         case 'save-as': return void (async () => {
-          const result = await window.marki.files.saveAs(doc.fileName, store.fullText())
-          if (result.ok) {
-            store.afterFiling([result.path])
+          const generation = store.loadGeneration
+          const text = store.fullText()
+          const result = await window.marki.files.saveAs(doc.fileName, text)
+          if (!result.ok) return
+          // Only the text written counts as saved, and only the note it came from moves.
+          if (store.loadGeneration === generation) {
+            store.afterFiling([result.path], { written: text })
             store.setFileName(baseName(result.path) || doc.fileName)
-            pushToast({ text: 'Saved.' })
           }
+          pushToast({ text: 'Saved.' })
         })()
         case 'undo': return store.undo()
         case 'redo': return store.redo()

@@ -202,7 +202,7 @@ describe('what the editor holds after filing', () => {
     store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
     const stamped = '---\nid: 01ABC\ntype: note\nskills: [librarian]\n---\n# Hello\n'
 
-    store.afterFiling(['C:/sb/Inbox/notes.md'], stamped)
+    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: stamped })
 
     expect(store.fullText()).toBe(stamped)
     expect(store.state.frontMatterRaw).toContain('id: 01ABC')
@@ -212,7 +212,7 @@ describe('what the editor holds after filing', () => {
 
   test('a later edit still counts as a change against the stamped text', () => {
     store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    store.afterFiling(['C:/sb/Inbox/notes.md'], '---\nid: 01ABC\n---\n# Hello\n')
+    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: '---\nid: 01ABC\n---\n# Hello\n' })
     expect(store.state.dirty).toBe(false)
 
     store.setBody('# Hello there\n', null)
@@ -222,7 +222,7 @@ describe('what the editor holds after filing', () => {
 
   test('undoing past the filing does not lose the stamp', () => {
     store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    store.afterFiling(['C:/sb/Inbox/notes.md'], '---\nid: 01ABC\n---\n# Hello\n')
+    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: '---\nid: 01ABC\n---\n# Hello\n' })
     store.setBody('# Edited\n', null)
     store.commitUndoGroup()
     store.undo()
@@ -234,5 +234,76 @@ describe('what the editor holds after filing', () => {
     store.afterFiling(['C:/sb/Inbox/notes.md'])
     expect(store.fullText()).toBe('# Hello\n')
     expect(store.state.paths).toEqual(['C:/sb/Inbox/notes.md'])
+  })
+})
+
+describe('only what was written counts as saved', () => {
+  beforeEach(() => store.load(loaded('one\n')))
+
+  test('text typed while a save was on its way stays unsaved', () => {
+    store.setBody('two\n', null)
+    const written = store.fullText()
+    store.setBody('two and more\n', null) // typed during the await
+    store.markSaved(written)
+    expect(store.state.dirty).toBe(true)
+    // ...and getting back to exactly what was written is clean again
+    store.setBody('two\n', null)
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('markSaved with the current text clears dirty', () => {
+    store.setBody('two\n', null)
+    store.markSaved(store.fullText())
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('markSaved with nothing given still means the current text', () => {
+    store.setBody('two\n', null)
+    store.markSaved()
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('a first save with typing during it keeps the new typing unsaved', () => {
+    store.setBody('two\n', null)
+    const written = store.fullText()
+    store.setBody('two and more\n', null)
+    store.afterFiling(['C:/sb/notes.md'], { written })
+    expect(store.state.paths).toEqual(['C:/sb/notes.md'])
+    expect(store.state.dirty).toBe(true)
+    store.setBody('two\n', null)
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('a move keeps whatever was unsaved before it unsaved', () => {
+    store.setBody('typed after the last save\n', null)
+    store.afterFiling(['C:/elsewhere/notes.md'])
+    expect(store.state.dirty).toBe(true)
+    store.setBody('one\n', null)
+    expect(store.state.dirty).toBe(false)
+  })
+
+  test('stamped text replaces the editor, separately from what was written', () => {
+    const stamped = '---\nid: 01ABC\n---\none\n'
+    store.afterFiling(['C:/sb/notes.md'], { stampedText: stamped, written: 'one\n' })
+    expect(store.fullText()).toBe(stamped)
+    expect(store.state.dirty).toBe(true)
+  })
+})
+
+describe('telling one opened note from the next', () => {
+  test('loading and resetting change the generation; editing and saving do not', () => {
+    const start = store.loadGeneration
+    store.load(loaded('one\n'))
+    const afterLoad = store.loadGeneration
+    expect(afterLoad).not.toBe(start)
+
+    store.setBody('two\n', null)
+    store.markSaved()
+    store.afterFiling(['C:/sb/notes.md'])
+    store.setFileName('other.md')
+    expect(store.loadGeneration).toBe(afterLoad)
+
+    store.reset()
+    expect(store.loadGeneration).not.toBe(afterLoad)
   })
 })

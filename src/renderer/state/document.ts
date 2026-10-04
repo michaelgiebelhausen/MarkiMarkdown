@@ -59,6 +59,7 @@ export class DocumentStore {
   private future: DocState[] = []
   private pending: DocState | null = null
   private savedText = ''
+  private generation = 0
 
   constructor() {
     this.refreshSnapshot()
@@ -100,6 +101,15 @@ export class DocumentStore {
     return this.future.length > 0
   }
 
+  /**
+   * Changes whenever a different note is opened or a new one started (load and reset), and
+   * at no other time. A save records it before it awaits anything and checks it after each
+   * await, so a reply for the note that was open never lands on the one open now.
+   */
+  get loadGeneration(): number {
+    return this.generation
+  }
+
   /* ---------------- loading ---------------- */
 
   load(file: LoadedFile): void {
@@ -123,6 +133,7 @@ export class DocumentStore {
     this.future = []
     this.pending = null
     this.savedText = file.text
+    this.generation += 1
     this.emit()
   }
 
@@ -133,6 +144,7 @@ export class DocumentStore {
     this.future = []
     this.pending = null
     this.savedText = ''
+    this.generation += 1
     this.emit()
   }
 
@@ -235,14 +247,28 @@ export class DocumentStore {
 
   /* ---------------- saving ---------------- */
 
-  markSaved(): void {
-    this.savedText = this.fullText()
-    this.state = { ...this.state, dirty: false }
+  /**
+   * The file now holds `written`: the text the save actually sent, captured before it was
+   * sent. Anything typed while the save was on its way stays unsaved (dirty), so it is
+   * never counted as saved without reaching the disk. Leave it out only when nothing can
+   * have changed since the text was read.
+   */
+  markSaved(written?: string): void {
+    this.savedText = written ?? this.fullText()
+    this.state = { ...this.state, dirty: this.fullText() !== this.savedText }
     this.emit()
   }
 
-  /** The note now lives at these paths (after a first save or a move). If text is given, the editor takes it on as saved. */
-  afterFiling(paths: string[], stampedText?: string): void {
+  /**
+   * The note now lives at these paths (after a first save, a Save As or a move).
+   *
+   * `written` is the text the file at these paths now holds, as for markSaved. Leave it out
+   * for a move: the moved file still holds what was last saved, so whatever is unsaved
+   * stays unsaved. `stampedText` replaces what the editor holds; when it is given and
+   * `written` is not, the stamped text is taken to be what was written.
+   */
+  afterFiling(paths: string[], options: { written?: string; stampedText?: string } = {}): void {
+    const { written, stampedText } = options
     const split = stampedText === undefined ? null : splitFrontMatter(stampedText)
     this.state = {
       ...this.state,
@@ -251,10 +277,10 @@ export class DocumentStore {
       paths,
       originalPath: undefined,
       isPlainText: false,
-      dirty: false,
       version: this.state.version + 1
     }
-    this.savedText = this.fullText()
+    this.savedText = written ?? stampedText ?? this.savedText
+    this.state = { ...this.state, dirty: this.fullText() !== this.savedText }
     this.emit()
   }
 }

@@ -14,6 +14,7 @@ export function SaveLocations({ flow }: { flow: SaveFlow }) {
       <button
         type="button"
         className="folder-field"
+        disabled={flow.busy}
         aria-label="Working folder"
         title={flow.workingDir || undefined}
         onClick={() => void flow.chooseWorkingFolder()}
@@ -34,6 +35,7 @@ export function SaveLocations({ flow }: { flow: SaveFlow }) {
       <button
         type="button"
         className="folder-field"
+        disabled={flow.busy}
         aria-label="Raw folder"
         title={flow.rawPath || undefined}
         onClick={() => void flow.chooseRawFolder()}
@@ -53,7 +55,7 @@ export function SaveLocations({ flow }: { flow: SaveFlow }) {
 export function SaveButton({ flow }: { flow: SaveFlow }) {
   return (
     <div className="save-row">
-      <button className="btn btn-primary" disabled={flow.saving} onClick={() => void flow.save()}>
+      <button className="btn btn-primary" disabled={flow.busy} onClick={() => void flow.save()}>
         {flow.willArchive ? 'Save and archive' : 'Save'}
       </button>
     </div>

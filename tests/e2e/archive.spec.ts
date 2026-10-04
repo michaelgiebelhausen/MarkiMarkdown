@@ -33,6 +33,31 @@ const archiveBox = () => pane().getByRole('checkbox', { name: /Archive \/ distri
 const saveButton = () => pane().getByRole('button', { name: 'Save', exact: true })
 const saveAndArchive = () => pane().getByRole('button', { name: 'Save and archive', exact: true })
 const tickPair = () => pane().getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true }).click()
+const workingFolderButton = () => pane().getByRole('button', { name: 'Working folder', exact: true })
+const rawFolderButton = () => pane().getByRole('button', { name: 'Raw folder', exact: true })
+
+/** The folder picker opens but does not answer until releaseFolderPicker, so a save can be caught mid-way. */
+async function holdFolderPicker(dir: string) {
+  await h.app.evaluate(({ dialog }, d) => {
+    const g = globalThis as unknown as { releasePick?: () => void }
+    delete g.releasePick
+    dialog.showOpenDialog = (() =>
+      new Promise((resolve) => {
+        g.releasePick = () => resolve({ canceled: false, filePaths: [d] })
+      })) as typeof dialog.showOpenDialog
+  }, dir)
+}
+
+async function releaseFolderPicker() {
+  const asked = () => h.app.evaluate(() => typeof (globalThis as unknown as { releasePick?: () => void }).releasePick)
+  await expect.poll(asked, { timeout: 10000 }).toBe('function')
+  await h.app.evaluate(() => (globalThis as unknown as { releasePick: () => void }).releasePick())
+}
+
+async function typeUntitled(text: string) {
+  await h.page.locator('.cm-content').click()
+  await h.page.keyboard.type(text)
+}
 
 test('Save and archive saves the working file and drops a dated copy in raw', async () => {
   const { dirs, notePath } = await openNote()
@@ -126,6 +151,60 @@ test('an untitled note asks for a folder on its first save and is named from its
   await expect.poll(() => existsSync(join(dirs.downloads, 'cell-walls.md')), { timeout: 20000 }).toBe(true)
   expect(readFileSync(join(dirs.downloads, 'cell-walls.md'), 'utf8')).toContain('Plants have them.')
   await expect(h.page.locator('.chip-name')).toHaveText('cell-walls.md')
+  expect(h.errors).toEqual([])
+})
+
+test('while a save is under way the buttons wait, and typing during it is saved later, not counted now', async () => {
+  const dirs = prepare()
+  h = await launch(dirs, { settings: { ...team(dirs), defaultRawPath: dirs.raw } })
+  await typeUntitled('# Cell walls\n\nPlants have them.')
+  await holdFolderPicker(dirs.downloads)
+  await saveButton().click()
+
+  await expect(saveButton()).toBeDisabled()
+  await expect(workingFolderButton()).toBeDisabled()
+  await expect(rawFolderButton()).toBeDisabled()
+
+  // typed after Save was clicked, while the folder picker is still open
+  await h.page.locator('.cm-content').click()
+  await h.page.keyboard.press('Control+End')
+  await h.page.keyboard.type(' Typed later.')
+  await releaseFolderPicker()
+
+  const saved = join(dirs.downloads, 'cell-walls.md')
+  await expect.poll(() => existsSync(saved), { timeout: 20000 }).toBe(true)
+  const first = readFileSync(saved, 'utf8')
+  expect(first).toContain('Plants have them.')
+  expect(first).not.toContain('Typed later.')
+  await expect(saveButton()).toBeEnabled()
+  await expect(workingFolderButton()).toBeEnabled()
+
+  // still unsaved, so autosave writes it on the next pause
+  await expect.poll(() => readFileSync(saved, 'utf8'), { timeout: 20000 }).toContain('Typed later.')
+  expect(h.errors).toEqual([])
+})
+
+test('a note opened mid-save stops that save and is left alone', async () => {
+  const dirs = prepare()
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  const target = join(dirs.root, 'target')
+  mkdirSync(target)
+  h = await launch(dirs, { settings: { ...team(dirs), defaultRawPath: dirs.raw } })
+  await typeUntitled('# Cell walls\n\nPlants have them.')
+  await holdFolderPicker(target)
+  await saveButton().click()
+
+  await h.app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('file:open-path', p), other)
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.')
+  await releaseFolderPicker()
+
+  await expect(h.page.locator('.toast')).toContainText('Another note was opened, so this save stopped. Save again.', {
+    timeout: 20000
+  })
+  expect(readdirSync(target)).toEqual([])
+  expect(readFileSync(other, 'utf8')).toBe('# Other\n\nSecond note.\n')
+  await expect(h.page.locator('.chip-name')).toHaveText('other.md')
   expect(h.errors).toEqual([])
 })
 

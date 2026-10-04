@@ -585,7 +585,8 @@ button:focus-visible,
   padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
   background: var(--bg-raised); color: var(--text); font-size: 12.5px; text-align: left;
 }
-.folder-field:hover { border-color: var(--accent); }
+.folder-field:hover:not(:disabled) { border-color: var(--accent); }
+.folder-field:disabled { opacity: 0.6; cursor: default; }
 .folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
 .archive-check { align-items: flex-start; margin: 4px 0; }
 .archive-check > span { display: flex; flex-direction: column; gap: 2px; }
