@@ -75,6 +75,15 @@ export function readSettings(): Settings {
   return cache
 }
 
+/**
+ * False once the app has decided never to write over the settings file this session,
+ * so the student can be told when the app opens instead of after their first change.
+ * Call after readSettings.
+ */
+export function settingsPersisting(): boolean {
+  return !doNotPersist
+}
+
 /** True when the file on disk may be replaced now. */
 function mayPersist(): boolean {
   if (doNotPersist) return false

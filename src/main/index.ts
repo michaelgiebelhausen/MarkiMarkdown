@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, clipboard } f
 import { join } from 'node:path'
 import { promises as fsp } from 'node:fs'
 import log from 'electron-log/main'
-import { readSettings, writeSettings, saveApiKey, loadApiKey } from './ipc/settings'
+import { readSettings, writeSettings, saveApiKey, loadApiKey, settingsPersisting } from './ipc/settings'
 import { diskOps, diskArchiveOps, readFileForEditor, writeAtomic, translateFsError } from './ipc/files'
 import { preflight, runFiling, undoFiling, type FilingPlan, type UndoRecord } from './ipc/filing'
 import { writeArchiveCopy, writeNewNote, moveWorkingFile } from './ipc/archive'
@@ -223,7 +223,10 @@ function fail(message: string) {
   return { ok: false as const, message }
 }
 
-ipcMain.handle('settings:read', () => ({ ...readSettings(), hasApiKey: loadApiKey() !== undefined }))
+ipcMain.handle('settings:read', () => {
+  const settings = readSettings()
+  return { ...settings, hasApiKey: loadApiKey() !== undefined, persisting: settingsPersisting() }
+})
 
 ipcMain.handle('settings:write', (_e, patch) => {
   try {

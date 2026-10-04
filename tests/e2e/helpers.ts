@@ -40,11 +40,12 @@ export function prepare(): Dirs {
 
 export async function launch(
   dirs: Dirs,
-  options: { settings?: Record<string, unknown>; openFile?: string } = {}
+  options: { settings?: Record<string, unknown>; openFile?: string; keepSettingsFile?: boolean } = {}
 ): Promise<Harness> {
   // seenWelcome true stops the welcome note appearing, keeping tests deterministic
   const settings = { seenWelcome: true, autosave: true, members: [], bunches: [], ...options.settings }
-  writeFileSync(join(dirs.userData, 'settings.json'), JSON.stringify(settings), 'utf8')
+  // keepSettingsFile leaves whatever the test put at settings.json, even something unreadable
+  if (!options.keepSettingsFile) writeFileSync(join(dirs.userData, 'settings.json'), JSON.stringify(settings), 'utf8')
 
   const args = ['.', `--user-data-dir=${dirs.userData}`]
   if (options.openFile) args.push(options.openFile)

@@ -139,6 +139,8 @@ button:focus-visible,
 .bunch-chip-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 550; }
 .bunch-chip-unavailable { opacity: 0.6; }
 .bunch-chip-drop { transform: scale(1.06); border-color: var(--accent); }
+/* The chip is one drop target: its emoji and warning must not fire their own drag events. */
+.bunch-chip > * { pointer-events: none; }
 .bunch-chip-more, .board-more { visibility: hidden; color: var(--muted); padding: 0 4px; font-size: 12px; }
 /* Shown on hover, and whenever the keyboard is on the chip, the name or the … itself. */
 .bunch-chip-wrap:hover .bunch-chip-more, .bunch-chip-wrap:focus-within .bunch-chip-more,

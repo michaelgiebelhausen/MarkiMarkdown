@@ -114,7 +114,7 @@ test('a member whose folder is missing is flagged in the grid but filing still w
   })
   await expect(h.page.locator('.pm-content')).toContainText('Lecture Notes')
 
-  await expect(h.page.locator('.pane-bunch .board-warn')).toHaveCount(1)
+  await expect(h.page.locator('.pane-bunch .board .board-warn')).toHaveCount(1)
 
   await h.page.getByRole('button', { name: 'study bunch', exact: true }).click({ button: 'right' })
   const bunchDialog = h.page.getByRole('dialog', { name: 'Edit bunch' })

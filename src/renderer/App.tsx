@@ -28,7 +28,7 @@ import { tidyMarkdown } from '@shared/markdown/tidy'
 import { buildStamp } from '@shared/bunch'
 import { lastBunchFor } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
-import { applyTicks, readTicks, type Ticks } from '@shared/ticks'
+import { applyTicks, readTicks, type TickReading, type Ticks } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
@@ -69,13 +69,6 @@ export default function App() {
 
   /* ---------------- settings and ledger ---------------- */
 
-  useEffect(() => {
-    window.marki.settings.read().then(setSettings)
-    window.marki.ledger.read().then((result) => {
-      if (result.ok) setLedger(result.entries)
-    })
-  }, [])
-
   /** Each "this is not being saved" warning is shown once per session and stays until dismissed. */
   const warnedNotSaving = useRef(new Set<'settings' | 'ledger'>())
   const warnNotSaving = useCallback(
@@ -93,6 +86,17 @@ export default function App() {
     },
     [pushToast]
   )
+
+  useEffect(() => {
+    window.marki.settings.read().then((loaded) => {
+      setSettings(loaded)
+      // Saving was off before anything was changed; say so now, not after the first change.
+      if (!loaded.persisting) warnNotSaving('settings')
+    })
+    window.marki.ledger.read().then((result) => {
+      if (result.ok) setLedger(result.entries)
+    })
+  }, [warnNotSaving])
 
   /** Applies a settings write's reply, and says so once when it only lives in memory. */
   const applySettingsReply = useCallback(
@@ -160,53 +164,66 @@ export default function App() {
     [bunches, members, activeBunch, lastBunchId, missingRaw]
   )
 
-  /** The one way the grid and the chips change the note: rewrite its YAML as one undo step. */
+  /**
+   * The one way the grid and the chips change the note: rewrite its YAML as one undo step.
+   * `update` gets the ticks read from the YAML as it is right now, not as it was when the
+   * grid last drew, so two quick clicks build on each other instead of the second undoing
+   * the first.
+   */
   const writeTicks = useCallback(
-    (next: Ticks, bunch?: string | null) => {
-      if (!settings) return
-      const raw = applyTicks(store.state.frontMatterRaw, next, members, {
-        mirrorTags: settings.mirrorTicksAsTags,
-        preset: settings.frontMatterPreset,
-        bunch,
-        eol: store.state.eol,
-        newId: ulid(),
-        now: nowLocalIso(),
-        title: suggestTitle(store.state.body)
-      })
+    (update: (current: TickReading) => Ticks, bunch?: string | null) => {
+      const current = settingsRef.current
+      if (!current) return
+      const roster = current.members
+      const reading = readTicks(store.state.frontMatterRaw, roster)
+      const raw = reading.ok
+        ? applyTicks(store.state.frontMatterRaw, update(reading), roster, {
+            mirrorTags: current.mirrorTicksAsTags,
+            preset: current.frontMatterPreset,
+            bunch,
+            eol: store.state.eol,
+            newId: ulid(),
+            now: nowLocalIso(),
+            title: suggestTitle(store.state.body)
+          })
+        : null
       if (raw === null) {
-        pushToast({ text: "This note's YAML can't be changed safely from here. Fix it in the Raw Markdown pane first.", tone: 'warn' })
+        pushToast({
+          text: reading.ok
+            ? "This note's YAML can't be changed safely from here. Fix it in the Raw Markdown pane first."
+            : "The YAML at the top of this note can't be read, so nothing was ticked. Fix it in the Raw Markdown pane first.",
+          tone: 'warn'
+        })
         return
       }
       store.commitUndoGroup()
       store.setFrontMatter(raw, null)
       store.commitUndoGroup()
     },
-    [settings, members, pushToast]
+    [pushToast]
   )
 
   const flip = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
 
   const toggleSkill = useCallback(
-    (id: string) => writeTicks({ skillIds: flip(ticks.skillIds, id), domainIds: ticks.domainIds }),
-    [writeTicks, ticks]
+    (id: string) => writeTicks((now) => ({ skillIds: flip(now.skillIds, id), domainIds: now.domainIds })),
+    [writeTicks]
   )
 
   const toggleDomain = useCallback(
-    (id: string) => writeTicks({ skillIds: ticks.skillIds, domainIds: flip(ticks.domainIds, id) }),
-    [writeTicks, ticks]
+    (id: string) => writeTicks((now) => ({ skillIds: now.skillIds, domainIds: flip(now.domainIds, id) })),
+    [writeTicks]
   )
 
   const toggleCell = useCallback(
-    (skillId: string, domainId: string) => {
-      const both = ticks.skillIds.includes(skillId) && ticks.domainIds.includes(domainId)
-      const add = (list: string[], id: string) => (list.includes(id) ? list : [...list, id])
-      writeTicks(
-        both
-          ? { skillIds: ticks.skillIds.filter((x) => x !== skillId), domainIds: ticks.domainIds.filter((x) => x !== domainId) }
-          : { skillIds: add(ticks.skillIds, skillId), domainIds: add(ticks.domainIds, domainId) }
-      )
-    },
-    [writeTicks, ticks]
+    (skillId: string, domainId: string) =>
+      writeTicks((now) => {
+        const add = (list: string[], id: string) => (list.includes(id) ? list : [...list, id])
+        return now.skillIds.includes(skillId) && now.domainIds.includes(domainId)
+          ? { skillIds: now.skillIds.filter((x) => x !== skillId), domainIds: now.domainIds.filter((x) => x !== domainId) }
+          : { skillIds: add(now.skillIds, skillId), domainIds: add(now.domainIds, domainId) }
+      }),
+    [writeTicks]
   )
 
   /** Clicking the active bunch clears the bunch name but keeps the ticks. */
@@ -214,10 +231,13 @@ export default function App() {
     (id: string) => {
       const bunch = bunches.find((b) => b.id === id)
       if (!bunch) return
-      if (activeBunch?.id === bunch.id) writeTicks(ticks, null)
-      else writeTicks({ skillIds: bunch.skillIds, domainIds: bunch.domainIds }, bunch.name)
+      // Whether it is the active one is read from the YAML now, for the same reason as above.
+      const named = readTicks(store.state.frontMatterRaw, members).bunch
+      const active = named !== null && named.toLowerCase() === bunch.name.trim().toLowerCase()
+      if (active) writeTicks((now) => now, null)
+      else writeTicks(() => ({ skillIds: bunch.skillIds, domainIds: bunch.domainIds }), bunch.name)
     },
-    [bunches, activeBunch, writeTicks, ticks]
+    [bunches, members, writeTicks]
   )
 
   /* ---------------- check folders really exist ---------------- */
@@ -752,7 +772,8 @@ export default function App() {
       const mod = event.ctrlKey || event.metaKey
       if (!mod) return
       const digit = /^Digit([1-9])$/.exec(event.code)
-      if (event.shiftKey && digit) {
+      // A dialog has the student's attention: a bunch changing behind it would be a surprise.
+      if (event.shiftKey && digit && document.querySelector('[role="dialog"]') === null) {
         const index = Number(digit[1]) - 1
         const bunch = bunches[index]
         if (bunch) {

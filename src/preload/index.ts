@@ -8,7 +8,8 @@ type Result<T> = Ok<T> | Err
 
 const api = {
   settings: {
-    read: (): Promise<Settings & { hasApiKey: boolean }> => ipcRenderer.invoke('settings:read'),
+    /** `persisting` is false when nothing will be saved to disk this session. */
+    read: (): Promise<Settings & { hasApiKey: boolean; persisting: boolean }> => ipcRenderer.invoke('settings:read'),
     /** `persisted` is false when the change is only kept in memory for this session. */
     write: (patch: Partial<Settings>): Promise<Result<{ settings: Settings; persisted: boolean }>> =>
       ipcRenderer.invoke('settings:write', patch),

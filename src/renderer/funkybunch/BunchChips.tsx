@@ -52,7 +52,12 @@ function BunchChip({
           event.preventDefault()
           setOver(true)
         }}
-        onDragLeave={() => setOver(false)}
+        onDragLeave={(event) => {
+          // Moving onto the chip's own emoji or warning is not leaving the chip.
+          const to = event.relatedTarget
+          if (to instanceof Node && event.currentTarget.contains(to)) return
+          setOver(false)
+        }}
         onDrop={(event) => {
           if (!event.dataTransfer.types.includes('text/marki-note')) return
           event.preventDefault()

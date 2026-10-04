@@ -149,6 +149,57 @@ test('a new bunch cannot take a name another bunch already has', async () => {
   expect(h.errors).toEqual([])
 })
 
+test('clicking a square whose skill and domain are both ticked unticks both', async () => {
+  await openNote('---\nskills: [librarian]\ndomains: [thesis]\n---\n# Note\n')
+  const cell = pane().getByRole('button', { name: 'librarian and thesis: 0 notes' })
+  await expect(cell).toHaveAttribute('aria-pressed', 'true')
+  await cell.click()
+  await expect(cell).toHaveAttribute('aria-pressed', 'false')
+  await expect(pane().getByRole('button', { name: 'librarian skill', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(pane().getByRole('button', { name: 'thesis domain', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(source()).not.toContainText('skills:')
+  await expect(source()).not.toContainText('domains:')
+  expect(h.errors).toEqual([])
+})
+
+test('Save as bunch starts from the skills and domains ticked now', async () => {
+  await openNote('---\nskills: [librarian]\n---\n# Note\n')
+  await pane().getByRole('button', { name: '+ Save as bunch' }).click()
+  const dialog = h.page.getByRole('dialog', { name: 'Make a bunch' })
+  await expect(dialog.getByRole('checkbox', { name: /librarian/ })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: /thesis/ })).not.toBeChecked()
+  expect(h.errors).toEqual([])
+})
+
+test('two clicks in a row both land, even before the grid redraws', async () => {
+  await openNote('# Note\n')
+  // Both clicks run in one task, so the second handler runs before React re-renders.
+  await pane().evaluate((root) => {
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('.board-head')]
+    for (const b of buttons) b.click()
+  })
+  await expect(pane().getByRole('button', { name: 'librarian skill', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(pane().getByRole('button', { name: 'thesis domain', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(source()).toContainText('- librarian')
+  await expect(source()).toContainText('- thesis')
+  expect(h.errors).toEqual([])
+})
+
+test('Ctrl+Shift+1 applies the first bunch, but not while a dialog is open', async () => {
+  await openNote('# Note\n')
+  await pane().getByRole('button', { name: '+ Save as bunch' }).click()
+  await expect(h.page.getByRole('dialog', { name: 'Make a bunch' })).toBeVisible()
+  await h.page.keyboard.press('Control+Shift+Digit1')
+  await h.page.waitForTimeout(300)
+  await h.page.keyboard.press('Escape')
+  await expect(h.page.getByRole('dialog')).toHaveCount(0)
+  await expect(source()).not.toContainText('bunch:')
+
+  await h.page.keyboard.press('Control+Shift+Digit1')
+  await expect(source()).toContainText('bunch: study')
+  expect(h.errors).toEqual([])
+})
+
 test('with nobody in the roster the pane explains itself', async () => {
   await openNote('# Note\n', { members: [], bunches: [] })
   await expect(pane().getByRole('button', { name: 'Add a skill' })).toBeVisible()

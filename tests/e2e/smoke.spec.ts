@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { chmodSync, readFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, type Harness } from './helpers'
 
@@ -171,6 +171,20 @@ test('settings that cannot be saved are reported once, and the warning stays', a
   } finally {
     chmodSync(file, 0o644)
   }
+  expect(h.errors).toEqual([])
+})
+
+test('settings that cannot even be read are reported as soon as the app opens', async () => {
+  const dirs = prepare()
+  // A folder where the settings file belongs cannot be read, so saving is off from the start.
+  mkdirSync(join(dirs.userData, 'settings.json'))
+  h = await launch(dirs, { keepSettingsFile: true })
+  const warning = h.page.locator('.toast', { hasText: "can't save its settings right now" })
+  await expect(warning).toHaveCount(1)
+  // A failed write later in the session does not add a second copy.
+  await h.page.getByRole('checkbox', { name: 'Funky Bunch' }).uncheck()
+  await h.page.waitForTimeout(500)
+  await expect(warning).toHaveCount(1)
   expect(h.errors).toEqual([])
 })
 
