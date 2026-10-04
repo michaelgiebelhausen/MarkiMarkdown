@@ -62,9 +62,67 @@ describe('dragDivider', () => {
     expect(w[1] * 1200).toBeCloseTo(MIN_WIDTH.raw)
   })
 
-  test('a hidden pane keeps its stored width', () => {
+  test('a hidden pane keeps its share relative to the others', () => {
     const l = layoutPanes({ bunch: true, raw: false, rendered: true }, [1, 7, 1], 1200)
     const w = dragDivider([1, 7, 1], l, 0, 0, 1200)
-    expect(w[1]).toBe(7)
+    expect(w[1] / w[0]).toBeCloseTo(7)
+    expect(w[1] / w[2]).toBeCloseTo(7)
+    expect(w[1]).toBeCloseTo(3.5)
+  })
+
+  test('after a drag, re-showing an unticked pane gives it the share it had before', () => {
+    const wide = 6000
+    const before = layoutPanes(all, [1, 7, 1], wide).fractions[1]
+    const l = layoutPanes({ bunch: true, raw: false, rendered: true }, [1, 7, 1], 1200)
+    const w = dragDivider([1, 7, 1], l, 0, 120, 1200)
+    const after = layoutPanes(all, w, wide).fractions[1]
+    expect(after).toBeCloseTo(before)
+    expect(after).toBeCloseTo(7 / 9)
+  })
+
+  test('after a drag, a pane hidden for lack of room comes back at the share it had', () => {
+    const wide = 6000
+    const before = layoutPanes(all, [2, 2, 4], wide).fractions[2]
+    const l = layoutPanes(all, [2, 2, 4], 700)
+    expect(l.hidden).toEqual(['rendered'])
+    const w = dragDivider([2, 2, 4], l, 0, 30, 700)
+    expect(layoutPanes(all, w, wide).fractions[2]).toBeCloseTo(before)
+  })
+
+  test('refuses to move for a bad total, distance or divider', () => {
+    const l = layoutPanes(all, [1, 1, 2], 1200)
+    const normalised = dragDivider([1, 1, 2], l, 0, 0, 1200)
+    for (const [index, dx, total] of [
+      [0, 50, 0],
+      [0, 50, -10],
+      [0, 50, Number.NaN],
+      [0, Number.NaN, 1200],
+      [0, Number.POSITIVE_INFINITY, 1200],
+      [0.5, 50, 1200],
+      [-1, 50, 1200],
+      [2, 50, 1200]
+    ]) {
+      const w = dragDivider([1, 1, 2], l, index, dx, total)
+      w.forEach((v, i) => expect(v).toBeCloseTo(normalised[i]))
+    }
+  })
+})
+
+describe('layoutPanes guards', () => {
+  test.each([0, -5, Number.NaN, Number.POSITIVE_INFINITY])('a total of %s collapses to the first shown pane', (total) => {
+    const l = layoutPanes({ bunch: false, raw: true, rendered: true }, [1, 1, 1], total)
+    expect(l.shown).toEqual(['raw'])
+    expect(l.hidden).toEqual(['rendered'])
+    expect(l.fractions).toEqual([1])
+  })
+
+  test('a width that is not a finite number counts as 0', () => {
+    const l = layoutPanes({ bunch: false, raw: true, rendered: true }, [1, Number.NaN, 3], 6000)
+    l.fractions.forEach((f) => expect(Number.isFinite(f)).toBe(true))
+    expect(sum(l.fractions)).toBeCloseTo(1)
+    expect(l.fractions[1]).toBeGreaterThan(l.fractions[0])
+    const inf = layoutPanes({ bunch: false, raw: true, rendered: true }, [1, Number.POSITIVE_INFINITY, 3], 6000)
+    inf.fractions.forEach((f) => expect(Number.isFinite(f)).toBe(true))
+    expect(sum(inf.fractions)).toBeCloseTo(1)
   })
 })

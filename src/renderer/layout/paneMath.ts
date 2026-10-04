@@ -34,23 +34,32 @@ function clampToMinimums(keys: PaneKey[], fractions: number[], total: number): n
   return raised.map((f, i) => f - over * (slack[i] / slackSum))
 }
 
+/** A stored width that is not a usable number (NaN, Infinity, negative) counts as 0. */
+function usable(width: number): number {
+  return Number.isFinite(width) && width > 0 ? width : 0
+}
+
 /** Which ticked panes fit in `total` pixels, and their shares. The rightmost ticked pane drops first. */
 export function layoutPanes(panes: PaneSet, widths: [number, number, number], total: number): PaneLayout {
+  // A window not measured yet (or measured as nonsense) is treated as no room at all.
+  const room = Number.isFinite(total) && total > 0 ? total : 0
   const shown = PANE_ORDER.filter((k) => panes[k])
   const hidden: PaneKey[] = []
-  while (shown.length > 1 && shown.reduce((s, k) => s + MIN_WIDTH[k], 0) > total) {
+  while (shown.length > 1 && shown.reduce((s, k) => s + MIN_WIDTH[k], 0) > room) {
     hidden.unshift(shown.pop() as PaneKey)
   }
-  const raw = shown.map((k) => widths[PANE_ORDER.indexOf(k)])
+  if (room === 0) return { shown, hidden, fractions: shown.map(() => 1) }
+  const raw = shown.map((k) => usable(widths[PANE_ORDER.indexOf(k)]))
   const sum = raw.reduce((a, b) => a + b, 0)
   const fractions = sum > 0 ? raw.map((w) => w / sum) : raw.map(() => 1 / raw.length)
-  return { shown, hidden, fractions: clampToMinimums(shown, fractions, total) }
+  return { shown, hidden, fractions: clampToMinimums(shown, fractions, room) }
 }
 
 /**
  * Moves the divider between shown pane `index` and the next one by `dx` pixels, never
  * squeezing either below its minimum. Returns widths for all three panes: shown panes
- * get their new shares, hidden panes keep what they had.
+ * get their new shares (adding up to 1), and each hidden pane is rescaled by the same
+ * factor, so when it comes back it takes the same share of the window it had before.
  */
 export function dragDivider(
   widths: [number, number, number],
@@ -59,11 +68,15 @@ export function dragDivider(
   dx: number,
   total: number
 ): [number, number, number] {
-  const next: [number, number, number] = [...widths]
+  const stored = widths.map(usable)
+  const shownSum = layout.shown.reduce((s, key) => s + stored[PANE_ORDER.indexOf(key)], 0)
+  const scale = shownSum > 0 ? 1 / shownSum : 1
+  const next = stored.map((w) => w * scale) as [number, number, number]
   layout.shown.forEach((key, i) => {
     next[PANE_ORDER.indexOf(key)] = layout.fractions[i]
   })
-  if (total <= 0 || index < 0 || index >= layout.shown.length - 1) return next
+  const badDivider = !Number.isInteger(index) || index < 0 || index >= layout.shown.length - 1
+  if (!(total > 0) || !Number.isFinite(dx) || badDivider) return next
   const left = layout.shown[index]
   const right = layout.shown[index + 1]
   const a = layout.fractions[index]
