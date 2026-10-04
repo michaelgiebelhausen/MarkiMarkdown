@@ -24,7 +24,7 @@ import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtT
 import { tidyMarkdown } from '@shared/markdown/tidy'
 import { archiveCount, noteIdOf } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
-import { applyTicks, namedCount, readTicks, type TickReading, type Ticks } from '@shared/ticks'
+import { applyTicks, nameKey, namedCount, readTicks, type TickReading, type Ticks, type UnknownName } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
@@ -205,8 +205,6 @@ export default function App() {
     members,
     activeBunch,
     defaultRawPath: settings?.defaultRawPath ?? '',
-    mirrorTags: settings?.mirrorTicksAsTags ?? false,
-    preset: settings?.frontMatterPreset ?? 'okf',
     confirmedFileMoves: settings?.confirmedFileMoves ?? false,
     onConfirmedFileMoves: () => void saveSettings({ confirmedFileMoves: true }),
     onLedger: setLedger,
@@ -651,7 +649,7 @@ export default function App() {
   // saveSettings reports a failed write; a dialog then stays open so nothing is lost.
 
   const upsertMember = useCallback(
-    async (member: Member, fromUnknownName = false) => {
+    async (member: Member, fromUnknownName?: UnknownName) => {
       const current = settingsRef.current
       if (!current) return
       const list = current.members
@@ -662,8 +660,16 @@ export default function App() {
       if (!result.ok) return
       closeDialog()
       // A name the note already had is now somebody: rewrite the ticks as they stand, so
-      // its path is filled in beside it.
-      if (fromUnknownName) writeTicks((now) => now)
+      // its path is filled in beside it. Renamed (or made the other kind) in the dialog,
+      // the new member is not the note's name, so the YAML has nothing to gain and is
+      // left alone.
+      if (
+        fromUnknownName !== undefined &&
+        member.kind === fromUnknownName.kind &&
+        nameKey(member.name) === nameKey(fromUnknownName.name)
+      ) {
+        writeTicks((now) => now)
+      }
     },
     [saveSettings, closeDialog, writeTicks]
   )
@@ -889,7 +895,14 @@ export default function App() {
           presetKind={dialog.presetKind}
           presetName={dialog.presetName}
           siblings={members}
-          onSave={(member) => upsertMember(member, dialog.existing === undefined && dialog.presetName !== undefined)}
+          onSave={(member) =>
+            upsertMember(
+              member,
+              dialog.existing === undefined && dialog.presetName !== undefined && dialog.presetKind !== undefined
+                ? { name: dialog.presetName, kind: dialog.presetKind }
+                : undefined
+            )
+          }
           onDelete={dialog.existing ? () => void removeMember(dialog.existing!.id) : undefined}
           onClose={closeDialog}
         />

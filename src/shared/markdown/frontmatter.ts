@@ -86,7 +86,8 @@ function looksLikeSettings(raw: string): boolean {
  * The schema's number tags, but a number read from the note is written back exactly as the
  * note spelled it: `id: 007` stays 007 and `0x1F` stays 0x1F, where the parser's own
  * writer would give 7 and 0x1f. A number set by the app has no spelling, and is written
- * the usual way.
+ * the usual way. A blank spelling is no spelling (Number('') is 0, but writing nothing
+ * would read back as null).
  */
 function keepNumberSpelling(tags: Tags): Tags {
   return tags.map((tag) => {
@@ -96,7 +97,11 @@ function keepNumberSpelling(tags: Tags): Tags {
     const kept: ScalarTag = {
       ...(tag as ScalarTag),
       stringify: (item, ctx, onComment, onChompKeep) =>
-        isScalar(item) && typeof item.value === 'number' && typeof item.source === 'string' && Number(item.source) === item.value
+        isScalar(item) &&
+        typeof item.value === 'number' &&
+        typeof item.source === 'string' &&
+        item.source.trim() !== '' &&
+        Number(item.source) === item.value
           ? item.source
           : write(item, ctx, onComment, onChompKeep)
     }
@@ -153,8 +158,11 @@ export function scalarSource(raw: string | null, key: string): string | null {
   return null
 }
 
-/** Keys a second-brain script greps line by line, so they are written one item per line. */
-const BLOCK_LIST_KEYS = new Set(['skills', 'skill_paths', 'domains', 'domain_paths'])
+/**
+ * Keys a second-brain script greps line by line, so they are written one item per line.
+ * The 1.1 path keys are written only when archiving lines a 1.1 note's paths up.
+ */
+const BLOCK_LIST_KEYS = new Set(['skills', 'skill_paths', 'domains', 'domain_paths', 'agent_paths', 'artifact_paths'])
 
 /**
  * Tags in these namespaces, in any case and with or without Obsidian's leading #, belong
@@ -195,6 +203,43 @@ export function isListEdit(value: unknown): value is ListEdit {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const edit = value as Partial<ListEdit>
   return edit.removeMatching instanceof RegExp && Array.isArray(edit.append)
+}
+
+/**
+ * A patch value that renames items of a list in place: each text item that rename turns
+ * into other text takes that text where it stands, keeping its comment and quoting. An
+ * item whose new text the list already has (or an earlier item was renamed to) goes
+ * instead, so nothing is listed twice. A key that is not a list is left alone.
+ */
+export interface ListRename {
+  rename: (value: string) => string | null
+}
+
+function isListRename(value: unknown): value is ListRename {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return typeof (value as Partial<ListRename>).rename === 'function'
+}
+
+function applyListRename(doc: Document, key: string, edit: ListRename): void {
+  const node = doc.get(key, true)
+  if (!isSeq(node)) return
+  const text = (item: unknown): string | null => (isScalar(item) && typeof item.value === 'string' ? item.value : null)
+  const renamed = node.items.map((item) => {
+    const value = text(item)
+    if (value === null) return null
+    const to = edit.rename(value)
+    return to !== null && to !== value ? to : null
+  })
+  if (renamed.every((to) => to === null)) return
+  const taken = new Set(node.items.filter((_, i) => renamed[i] === null).map(text))
+  node.items = node.items.filter((item, i) => {
+    const to = renamed[i]
+    if (to === null || to === undefined) return true
+    if (taken.has(to)) return false
+    taken.add(to)
+    ;(item as Scalar).value = to
+    return true
+  })
 }
 
 /** `key:` with nothing after it: no comment, anchor or explicit tag that a rewrite would lose. */
@@ -246,6 +291,10 @@ function applyPatch(doc: Document, patch: FrontMatterPatch): void {
     }
     if (isListEdit(value)) {
       applyListEdit(doc, key, value)
+      continue
+    }
+    if (isListRename(value)) {
+      applyListRename(doc, key, value)
       continue
     }
     if (Array.isArray(value)) {

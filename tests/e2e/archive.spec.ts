@@ -303,13 +303,18 @@ test('archiving lines hand-typed names up with their paths, in the working file 
   await expect(h.page.locator('.toast')).toContainText('Saved and archived', { timeout: 20000 })
 
   const thesis = dirs.artifact.split(String.fromCharCode(92)).join('/')
+  const librarian = dirs.agent.split(String.fromCharCode(92)).join('/')
   for (const text of [readFileSync(join(dirs.raw, `essay-${today()}.md`), 'utf8'), readFileSync(notePath, 'utf8')]) {
-    expect(blockList(text, 'domains')).toEqual(['Thesis', 'History'])
+    // the names stay exactly as the student wrote them; only the paths are lined up
+    expect(text).toContain('\nskills: [librarian]\ndomains: [Thesis, History]\ndomain_paths:\n')
     expect(blockList(text, 'domain_paths')).toEqual([thesis, '""'])
+    expect(blockList(text, 'skill_paths')).toEqual([librarian])
+    expect(text).not.toMatch(/^(type|created|title|tags):/m)
   }
   // one undo step takes the rewrite back
   await menu('undo')
-  await expect(h.page.locator('.cm-content')).toContainText('domains: [Thesis, History]')
+  await expect(h.page.locator('.cm-content')).toContainText('domain_paths: [/somewhere]')
+  await expect(h.page.locator('.cm-content')).not.toContainText('skill_paths')
   expect(h.errors).toEqual([])
   await h.close({ expectUnsaved: true })
 })
@@ -334,6 +339,28 @@ test('adding a name from its chip fills in its path', async () => {
   await expect(h.page.locator('.cm-content')).not.toContainText('/somewhere')
   expect(h.errors).toEqual([])
   await h.close({ expectUnsaved: true })
+})
+
+test('renaming a name from its chip in the dialog leaves the YAML alone', async () => {
+  const { dirs } = await openNote('---\ndomains: [thesis, History]\ndomain_paths: [/somewhere]\n---\n# Essay\n')
+  const geography = join(dirs.root, 'geography')
+  mkdirSync(geography)
+  await h.app.evaluate(({ dialog }, dir) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog
+  }, geography)
+  await pane().getByRole('button', { name: "History isn't a domain yet. Add it?", exact: true }).click()
+  const dialog = h.page.getByRole('dialog', { name: 'Add a domain' })
+  await dialog.getByRole('button', { name: 'Choose...', exact: true }).click()
+  await dialog.getByRole('textbox', { name: 'Name' }).fill('Geography')
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // the new member is not the note's History, so nothing in the YAML is rewritten
+  await expect(h.page.locator('.cm-content')).toContainText('domains: [thesis, History]')
+  await expect(h.page.locator('.cm-content')).toContainText('domain_paths: [/somewhere]')
+  expect(h.errors).toEqual([])
+  // nothing was changed, so the note closes without asking
+  await h.close()
 })
 
 test('a hand-typed number id is recorded exactly as written', async () => {

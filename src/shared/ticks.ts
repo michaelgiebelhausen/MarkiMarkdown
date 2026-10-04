@@ -6,7 +6,8 @@ import {
   normaliseTags,
   parseFrontMatter,
   type FrontMatterPatch,
-  type ListEdit
+  type ListEdit,
+  type ListRename
 } from './markdown/frontmatter'
 import { toForwardSlashes } from './paths'
 
@@ -267,6 +268,56 @@ function slug(name: string): string {
 }
 
 /**
+ * The names, paths and mirrored-tag names applyTicks writes for one kind, given the ids
+ * ticked now and what the note said before (see applyTicks for the rules).
+ */
+function tickList(kind: MemberKind, ids: string[], before: TickReading, members: Member[]) {
+  const noteNames = kind === 'skill' ? before.skillNames : before.domainNames
+  const names: string[] = []
+  const paths: string[] = []
+  // Mirrored tags follow the roster's name, so they stay the same whatever the spelling.
+  const tagNames: string[] = []
+  const push = (name: string, path: string, tag: string | null) => {
+    // Exactly the same name twice would read back as one member, so the first wins.
+    if (names.includes(name)) return
+    names.push(name)
+    paths.push(path)
+    if (tag !== null) tagNames.push(tag)
+  }
+  const ofKind = members.filter((m) => m.kind === kind)
+  const spelledBy = new Map<string, Member>()
+  for (const m of ofKind) {
+    const spelling = before.spellings[m.id]
+    if (spelling !== undefined) spelledBy.set(spelling, m)
+  }
+  // 1. The names the note already has, in its own order. A member it names keeps the
+  // note's spelling, with the roster's path; an alias (another spelling of a member
+  // the note names) keeps its own spelling and also takes the member's path, but no
+  // tag of its own, since the member's tag covers it; an unknown name keeps an empty
+  // path. A member unticked now goes, and so does every alias of it, or the next read
+  // would tick it again.
+  for (const name of noteNames) {
+    const member = spelledBy.get(name)
+    if (member) {
+      if (ids.includes(member.id)) push(name, toForwardSlashes(member.path), member.name)
+      continue
+    }
+    const reaches = findMember(members, kind, name)
+    if (reaches) {
+      if (ids.includes(reaches.id)) push(name, toForwardSlashes(reaches.path), null)
+      continue
+    }
+    push(name, '', name)
+  }
+  // 2. Members ticked now that the note did not name yet, in roster order, under the
+  // roster's name.
+  for (const m of ofKind) {
+    if (ids.includes(m.id) && before.spellings[m.id] === undefined) push(m.name, toForwardSlashes(m.path), m.name)
+  }
+  return { names, paths, tagNames }
+}
+
+/**
  * Writes ticks into the front matter. This is the only writer of the app-owned keys
  * (bunch, skills, skill_paths, domains, domain_paths, mirrored tags, and on first use
  * id, type, title and created). Every other key and tag is left alone, and so is the
@@ -293,54 +344,10 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
     const before = readTicks(raw, members)
     if (!before.ok) return null
 
-    const list = (kind: MemberKind, ids: string[], noteNames: string[]) => {
-      const names: string[] = []
-      const paths: string[] = []
-      // Mirrored tags follow the roster's name, so they stay the same whatever the spelling.
-      const tagNames: string[] = []
-      const push = (name: string, path: string, tag: string | null) => {
-        // Exactly the same name twice would read back as one member, so the first wins.
-        if (names.includes(name)) return
-        names.push(name)
-        paths.push(path)
-        if (tag !== null) tagNames.push(tag)
-      }
-      const ofKind = members.filter((m) => m.kind === kind)
-      const spelledBy = new Map<string, Member>()
-      for (const m of ofKind) {
-        const spelling = before.spellings[m.id]
-        if (spelling !== undefined) spelledBy.set(spelling, m)
-      }
-      // 1. The names the note already has, in its own order. A member it names keeps the
-      // note's spelling, with the roster's path; an alias (another spelling of a member
-      // the note names) keeps its own spelling and also takes the member's path, but no
-      // tag of its own, since the member's tag covers it; an unknown name keeps an empty
-      // path. A member unticked now goes, and so does every alias of it, or the next read
-      // would tick it again.
-      for (const name of noteNames) {
-        const member = spelledBy.get(name)
-        if (member) {
-          if (ids.includes(member.id)) push(name, toForwardSlashes(member.path), member.name)
-          continue
-        }
-        const reaches = findMember(members, kind, name)
-        if (reaches) {
-          if (ids.includes(reaches.id)) push(name, toForwardSlashes(reaches.path), null)
-          continue
-        }
-        push(name, '', name)
-      }
-      // 2. Members ticked now that the note did not name yet, in roster order, under the
-      // roster's name.
-      for (const m of ofKind) {
-        if (ids.includes(m.id) && before.spellings[m.id] === undefined) push(m.name, toForwardSlashes(m.path), m.name)
-      }
-      return { names, paths, tagNames }
-    }
-    const skills = list('skill', ticks.skillIds, before.skillNames)
-    const domains = list('domain', ticks.domainIds, before.domainNames)
+    const skills = tickList('skill', ticks.skillIds, before, members)
+    const domains = tickList('domain', ticks.domainIds, before, members)
 
-    let tags: ListEdit | undefined
+    let tags: ListEdit | ListRename | undefined
     if (opts.mirrorTags) {
       const append: string[] = []
       const add = (tag: string) => {
@@ -352,16 +359,15 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
     } else if (before.usedAliases && Array.isArray(data.tags)) {
       // Mirroring is off, so no tags are written for the ticks; but moving a 1.1 note to
       // the new keys still renames its 1.1 tags, agent/x to skill/x and artifact/x to
-      // domain/x, keeping the rest of each tag as written.
-      const append: string[] = []
-      for (const tag of data.tags) {
-        if (typeof tag !== 'string') continue
-        const old = OLD_MIRRORED_TAG.exec(tag)
-        if (!old) continue
-        const renamed = `${old[1]}${old[2].toLowerCase() === 'agent' ? 'skill' : 'domain'}/${tag.slice(old[0].length)}`
-        if (!append.includes(renamed)) append.push(renamed)
+      // domain/x, keeping the rest of each tag as written, and each tag where it stands,
+      // with its comment and quoting.
+      tags = {
+        rename: (tag) => {
+          const old = OLD_MIRRORED_TAG.exec(tag)
+          if (!old) return null
+          return `${old[1]}${old[2].toLowerCase() === 'agent' ? 'skill' : 'domain'}/${tag.slice(old[0].length)}`
+        }
       }
-      if (append.length > 0) tags = { removeMatching: OLD_MIRRORED_TAG, append }
     }
 
     const bunch = opts.bunch === undefined ? undefined : (opts.bunch ?? '').trim()
@@ -382,6 +388,75 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
       tags
     }
     return mergeFrontMatter(raw, patch, opts.eol)
+  } catch {
+    return null
+  }
+}
+
+export interface ExpectedPaths {
+  skill_paths: string[]
+  domain_paths: string[]
+}
+
+/**
+ * The paths applyTicks would write beside the note's skill and domain names if it
+ * rewrote the ticks the note already has: one per name, in the note's order, by the same
+ * rules (a member's path, an alias's member's path, an empty path for a name nobody has).
+ * Null when the ticks can't read the front matter.
+ */
+export function expectedPaths(raw: string | null, members: Member[]): ExpectedPaths | null {
+  try {
+    const reading = readTicks(raw, members)
+    if (!reading.ok) return null
+    return {
+      skill_paths: tickList('skill', reading.skillIds, reading, members).paths,
+      domain_paths: tickList('domain', reading.domainIds, reading, members).paths
+    }
+  } catch {
+    return null
+  }
+}
+
+/** A path list as the note has it, equal to want. A missing or empty value is no paths; an empty item is an empty path. */
+function samePaths(value: unknown, want: string[]): boolean {
+  const list = value === null || value === undefined || value === '' ? [] : value
+  if (!Array.isArray(list) || list.length !== want.length) return false
+  return list.every((path, i) => (path === null ? '' : path) === want[i])
+}
+
+/**
+ * What archiving does to the YAML: makes the paths line up with the names again, and
+ * nothing else. When the note's skill_paths and domain_paths already are what
+ * expectedPaths gives, the block comes back exactly as it is. Otherwise only the path
+ * list that is out of step is rewritten, as a block list (or removed, when the note names
+ * nobody of that kind); the names, tags, comments and every other key stay as written,
+ * and nothing is added. A 1.1 note whose names are under agents or artifacts has its
+ * agent_paths or artifact_paths lined up instead, so it keeps its 1.1 keys until
+ * something is ticked; names split between the new key and the 1.1 one have no single
+ * path list to line up, so those are left alone. Null when there is no front matter or
+ * the ticks can't read it: nothing is written then.
+ */
+export function alignPaths(raw: string | null, members: Member[]): string | null {
+  try {
+    if (raw === null) return null
+    const parsed = parseFrontMatter(raw)
+    if (!parsed.ok) return null
+    const want = expectedPaths(raw, members)
+    if (want === null) return null
+    const data = parsed.data
+    const patch: FrontMatterPatch = {}
+    const line = (key: string, alias: string, paths: string[]) => {
+      const onNew = names(data[key]).length > 0
+      const onOld = names(data[alias]).length > 0
+      if (onNew && onOld) return
+      const pathKey = onOld ? `${alias.replace(/s$/, '')}_paths` : `${key.replace(/s$/, '')}_paths`
+      if (samePaths(data[pathKey], paths)) return
+      patch[pathKey] = paths.length > 0 ? paths : null
+    }
+    line('skills', 'agents', want.skill_paths)
+    line('domains', 'artifacts', want.domain_paths)
+    if (Object.keys(patch).length === 0) return raw
+    return mergeFrontMatter(raw, patch)
   } catch {
     return null
   }

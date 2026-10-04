@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentStore } from './document'
 import type { Bunch, LedgerEntry, Member } from '@shared/types'
-import { applyTicks, namedCount, readTicks, type TickReading } from '@shared/ticks'
+import { alignPaths, namedCount, readTicks, type TickReading } from '@shared/ticks'
 import { BLOCK_REASONS, planSave, type SavePlan } from '@shared/archive'
 import { ulid } from 'ulid'
 import { addArchived, mergeFrontMatter, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
@@ -9,7 +9,7 @@ import { baseName, dirName, samePath } from '@shared/paths'
 import { localDate, nowLocalIso } from '@shared/time'
 import { noteIdOf } from '@shared/ledger'
 import type { ToastMessage } from '@renderer/ui/Toast'
-import { suggestName, suggestTitle } from './naming'
+import { suggestName } from './naming'
 
 export interface SaveFlowInput {
   store: DocumentStore
@@ -20,9 +20,6 @@ export interface SaveFlowInput {
   members: Member[]
   activeBunch: Bunch | null
   defaultRawPath: string
-  /** How the ticks are written (as the grid writes them), for the paths an archive regenerates. */
-  mirrorTags: boolean
-  preset: 'okf' | 'basic'
   confirmedFileMoves: boolean
   onConfirmedFileMoves: () => void
   /** The ledger after a successful, saved append. */
@@ -203,8 +200,8 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
    * render's closure (one that waited for another job first), so it reads these through
    * this ref, and the note's own state from the store, never from the closure.
    */
-  const live = useRef({ rawPath, rawMissing, members, activeBunch, mirrorTags: input.mirrorTags, preset: input.preset })
-  live.current = { rawPath, rawMissing, members, activeBunch, mirrorTags: input.mirrorTags, preset: input.preset }
+  const live = useRef({ rawPath, rawMissing, members, activeBunch })
+  live.current = { rawPath, rawMissing, members, activeBunch }
 
   /** The folder the working file is in (or will be), read from the store right now. */
   const currentWorkingDir = () => {
@@ -263,26 +260,15 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   }
 
   /**
-   * Rewrites the ticks the note already has, as the grid would, so skill_paths and
-   * domain_paths line up with the names again (a hand-edited list may have more names than
-   * paths) in both the working file and the copy. One undo step, and only when something
-   * changes. The bunch is left alone. YAML the ticks can't rewrite is left as it is: such a
-   * note can't be archived anyway.
+   * Lines skill_paths and domain_paths up with the names again (a hand-edited list may
+   * have more names than paths), in both the working file and the copy, and touches
+   * nothing else: names, tags, comments and every other key stay exactly as the student
+   * wrote them (see alignPaths). One undo step, and only when a path list is out of step.
+   * YAML the ticks can't read is left as it is: such a note can't be archived anyway.
    */
-  const regenerateTicks = () => {
+  const alignPathsForArchive = () => {
     const raw = store.state.frontMatterRaw
-    if (raw === null) return
-    const { members: roster, mirrorTags, preset } = live.current
-    const reading = readTicks(raw, roster)
-    if (!reading.ok) return
-    const next = applyTicks(raw, { skillIds: reading.skillIds, domainIds: reading.domainIds }, roster, {
-      mirrorTags,
-      preset,
-      eol: store.state.eol,
-      newId: ulid(),
-      now: nowLocalIso(),
-      title: suggestTitle(store.state.body)
-    })
+    const next = alignPaths(raw, live.current.members)
     if (next === null || next === raw) return
     store.commitUndoGroup()
     store.setFrontMatter(next, null)
@@ -323,11 +309,12 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     progress.archiving = archiving
     const notWritten = (): SaveOutcome => ({ written: false, stillOpen: sameNote(generation), archived: 'not-wanted' })
     if (archiving) {
-      // The copy carries the same names and paths as the working file, regenerated from
-      // the roster so they line up. An archived note also needs an id, so the copy and the
-      // ledger can be traced back to it; a 1.1 note or a hand-typed one may have none.
-      // Each is its own undo step, so the working file and the copy both carry them.
-      regenerateTicks()
+      // The copy carries the same names and paths as the working file, with any path list
+      // that is out of step lined up from the roster; nothing else in the YAML changes. An
+      // archived note also needs an id, so the copy and the ledger can be traced back to
+      // it; a 1.1 note or a hand-typed one may have none. Each is its own undo step, so
+      // the working file and the copy both carry them.
+      alignPathsForArchive()
       addMissingId()
     }
     const text = store.fullText()

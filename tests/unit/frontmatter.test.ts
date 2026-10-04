@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { Scalar } from 'yaml'
 import {
   splitFrontMatter,
   parseFrontMatter,
@@ -176,6 +177,16 @@ describe('mergeFrontMatter', () => {
     const raw = '---\nid: 007\ncode: 0x1F\nscore: 1.50\nbig: 1e3\nlist: [007, 2]\n---\n'
     const out = mergeFrontMatter(raw, { count: 5 })
     expect(out).toBe('---\nid: 007\ncode: 0x1F\nscore: 1.50\nbig: 1e3\nlist: [007, 2]\ncount: 5\n---\n')
+  })
+
+  test('a number with an empty or blank spelling is written as the number, never as nothing', () => {
+    // Number('') and Number(' ') are both 0, so an empty spelling must not count as one.
+    for (const source of ['', '  ']) {
+      const zero = Object.assign(new Scalar(0), { source })
+      const out = mergeFrontMatter('---\ntitle: x\n---\n', { count: zero })
+      expect(out).toBe('---\ntitle: x\ncount: 0\n---\n')
+      expect(parseFrontMatter(out)).toEqual({ ok: true, data: { title: 'x', count: 0 } })
+    }
   })
 
   test('the archive stamp keeps a number id as written', () => {

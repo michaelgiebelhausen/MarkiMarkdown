@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applyTicks, namedCount, readTicks, type ApplyOptions } from '@shared/ticks'
+import { alignPaths, applyTicks, expectedPaths, namedCount, readTicks, type ApplyOptions } from '@shared/ticks'
 import { parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
 import type { Member } from '@shared/types'
 
@@ -332,7 +332,19 @@ describe('applyTicks', () => {
     const before = readTicks(raw, members)
     const d = data(applyTicks(raw, before, members, { ...opts, mirrorTags: false }))
     expect(d.skills).toEqual(['writer'])
-    expect(d.tags).toEqual(['keep', 'skill/old', 'skill/writer', 'domain/Biology', '#skill/x'])
+    expect(d.tags).toEqual(['skill/writer', 'keep', 'domain/Biology', 'skill/old', '#skill/x'])
+  })
+
+  test('renaming 1.1 tags keeps each one in its place, with its comment and quoting', () => {
+    const raw = '---\nagents:\n  - writer\ntags:\n  - keep\n  - agent/writer # mine\n  - "artifact/Biology"\n  - last\n---\n'
+    const out = applyTicks(raw, readTicks(raw, members), members, { ...opts, mirrorTags: false }) as string
+    expect(out).toContain('tags:\n  - keep\n  - skill/writer # mine\n  - "domain/Biology"\n  - last\n')
+  })
+
+  test('a renamed 1.1 tag the list already has is not written twice', () => {
+    const raw = '---\nagents: [writer]\ntags: [agent/writer, keep, skill/writer, agent/x, agent/X]\n---\n'
+    const d = data(applyTicks(raw, readTicks(raw, members), members, { ...opts, mirrorTags: false }))
+    expect(d.tags).toEqual(['keep', 'skill/writer', 'skill/x', 'skill/X'])
   })
 
   test('with mirroring off, a note already on the new keys keeps its agent/ tags', () => {
@@ -665,5 +677,94 @@ describe('applyTicks', () => {
     const out = applyTicks(null, { skillIds: ['s1'], domainIds: [] }, members, { ...opts, eol: '\r\n' }) as string
     expect(out).toContain('\r\n')
     expect(out.replace(/\r\n/g, '')).not.toContain('\n')
+  })
+})
+
+describe('expectedPaths', () => {
+  test('gives each name its path, in the note order, and an empty path to a name nobody has', () => {
+    expect(expectedPaths('---\nskills: [Writer, ghost]\ndomains: [biology]\n---\n', members)).toEqual({
+      skill_paths: ['C:/me/skills/writer', ''],
+      domain_paths: ['/me/domains/biology']
+    })
+  })
+
+  test('an alias takes the path of the member it reaches; a name repeated in another case counts once', () => {
+    const roster: Member[] = [{ id: 'c', kind: 'skill', name: 'Study Coach', emoji: '', path: '/me/coach' }]
+    expect(expectedPaths('---\nskills: [Study Coach, study-coach, STUDY COACH]\n---\n', roster)).toEqual({
+      skill_paths: ['/me/coach', '/me/coach'],
+      domain_paths: []
+    })
+  })
+
+  test('agrees with the paths applyTicks writes for the ticks the note has', () => {
+    const raw = '---\nskills: [editor, ghost, Writer]\nagents: [writer, other]\ndomains: [History, biology]\n---\n'
+    const now = readTicks(raw, members)
+    const d = data(applyTicks(raw, { skillIds: now.skillIds, domainIds: now.domainIds }, members, opts))
+    expect(expectedPaths(raw, members)).toEqual({ skill_paths: d.skill_paths, domain_paths: d.domain_paths })
+  })
+
+  test('no front matter means no paths; YAML the ticks cannot read gives null', () => {
+    expect(expectedPaths(null, members)).toEqual({ skill_paths: [], domain_paths: [] })
+    expect(expectedPaths('---\ntitle: My note: draft\n---\n', members)).toBeNull()
+    expect(expectedPaths('---\nskills: [writer]\nskills: [editor]\n---\n', members)).toBeNull()
+  })
+})
+
+describe('alignPaths (what archiving does to the YAML)', () => {
+  test('leaves a note whose paths already line up byte for byte alone', () => {
+    const raw =
+      "---\ntitle:    x\nskills:   [ writer ]  # main\nskill_paths: ['C:/me/skills/writer']\ndomains: [Geology]\ndomain_paths:\n  -\n---\n"
+    expect(alignPaths(raw, members)).toBe(raw)
+    expect(alignPaths('---\ntitle: x\n---\n', members)).toBe('---\ntitle: x\n---\n')
+  })
+
+  test('keeps a comment on a name and adds only the missing paths', () => {
+    const raw = '---\nskills:\n  - writer # main\n---\n'
+    expect(alignPaths(raw, members)).toBe('---\nskills:\n  - writer # main\nskill_paths:\n  - C:/me/skills/writer\n---\n')
+  })
+
+  test('keeps a flow list of names as written', () => {
+    const raw = '---\nskills: [writer, editor]\nskill_paths: [/old]\n---\n'
+    expect(alignPaths(raw, members)).toBe(
+      '---\nskills: [writer, editor]\nskill_paths:\n  - C:/me/skills/writer\n  - /me/skills/editor\n---\n'
+    )
+  })
+
+  test('when the paths are out of step, patches only them: no id, type, title, created or tags', () => {
+    const raw =
+      "---\ntitle: 'Cells'\ndomains: [Biology, Geology] # two\ndomain_paths: [/x]\nskills: [writer]\nskill_paths:\n  - C:/me/skills/writer\ntags: [a, \"b\", agent/writer]\nnote: keep\n---\n"
+    expect(alignPaths(raw, members)).toBe(
+      "---\ntitle: 'Cells'\ndomains: [Biology, Geology] # two\ndomain_paths:\n  - /me/domains/biology\n  - \"\"\nskills: [writer]\nskill_paths:\n  - C:/me/skills/writer\ntags: [a, \"b\", agent/writer]\nnote: keep\n---\n"
+    )
+  })
+
+  test('removes a path list left over when the note names nobody of that kind', () => {
+    expect(alignPaths('---\ntitle: x\nskill_paths: [/old]\n---\n', members)).toBe('---\ntitle: x\n---\n')
+  })
+
+  test('keeps the CRLF line endings of the note', () => {
+    const consistent = '---\r\nskills: [writer] # c\r\nskill_paths:\r\n  - C:/me/skills/writer\r\n---\r\n'
+    expect(alignPaths(consistent, members)).toBe(consistent)
+    expect(alignPaths('---\r\nskills: [writer] # c\r\ntitle: x\r\n---\r\n', members)).toBe(
+      '---\r\nskills: [writer] # c\r\ntitle: x\r\nskill_paths:\r\n  - C:/me/skills/writer\r\n---\r\n'
+    )
+  })
+
+  test('a 1.1 note keeps its keys: the paths beside agents and artifacts line up', () => {
+    const raw = '---\nagents: [writer, ghost]\nagent_paths: [/old]\nartifacts: [Biology]\n---\n'
+    expect(alignPaths(raw, members)).toBe(
+      '---\nagents: [writer, ghost]\nagent_paths:\n  - C:/me/skills/writer\n  - ""\nartifacts: [Biology]\nartifact_paths:\n  - /me/domains/biology\n---\n'
+    )
+  })
+
+  test('names split between skills and agents have no one path list to line up, so are left alone', () => {
+    const raw = '---\nskills: [writer]\nagents: [editor]\n---\n'
+    expect(alignPaths(raw, members)).toBe(raw)
+  })
+
+  test('YAML the ticks cannot read, or no front matter at all, gives null', () => {
+    expect(alignPaths(null, members)).toBeNull()
+    expect(alignPaths('---\ntitle: My note: draft\n---\n', members)).toBeNull()
+    expect(alignPaths('---\nskills:\n  - name: writer\n---\n', members)).toBeNull()
   })
 })
