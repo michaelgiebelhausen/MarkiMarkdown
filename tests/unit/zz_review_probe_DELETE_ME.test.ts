@@ -24,7 +24,7 @@ test('probe2', () => {
   } catch (e) { console.log('skills anchor THREW', String(e)) }
   // unchanged ticks on an already-app-written note: identical text?
   const w = applyTicks(null, { skillIds: ['s1'], domainIds: ['d1'] }, members, { ...opts, bunch: 'B' }) as string
-  const again = applyTicks(w, readTicks(w, members), members, { ...opts, newId: 'OTHER', now: 'LATER', title: 'T2' })
+  const again = applyTicks(w, readTicks(w, members), members, { ...opts, newId: 'OTHER', now: 'LATER' })
   console.log('no-churn', w === again)
   // tick toggle off then on: is it byte-identical to the start?
   const off = applyTicks(w, { skillIds: [], domainIds: ['d1'] }, members, opts) as string

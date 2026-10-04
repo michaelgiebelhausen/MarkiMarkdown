@@ -12,12 +12,23 @@ function ledgerPath(): string {
 
 /** Every archive copy the app has made. 1.1 entries are read under the new names; rubbish is dropped. */
 export function readLedger(): LedgerEntry[] {
+  const corruptBackup = (): void => {
+    backupOnce(ledgerPath(), join(app.getPath('userData'), 'ledger.corrupt.bak.json'))
+  }
   try {
-    const parsed = JSON.parse(readFileSync(ledgerPath(), 'utf8')) as unknown
+    let raw = readFileSync(ledgerPath(), 'utf8')
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
+    const parsed = JSON.parse(raw) as unknown
     if (isLegacyLedger(parsed)) backupOnce(ledgerPath(), join(app.getPath('userData'), 'ledger.v2.bak.json'))
-    if (!Array.isArray(parsed)) return []
+    if (!Array.isArray(parsed)) {
+      // Valid JSON of the wrong shape: the next append would replace it, so keep a copy.
+      corruptBackup()
+      return []
+    }
     return parsed.map(normaliseLedgerEntry).filter((e): e is LedgerEntry => e !== null)
   } catch {
+    // Missing files do nothing here (backupOnce checks); unreadable or unparsable ones are kept aside.
+    corruptBackup()
     return []
   }
 }

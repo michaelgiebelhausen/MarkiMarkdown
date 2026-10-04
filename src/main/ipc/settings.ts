@@ -19,13 +19,17 @@ function secretPath(): string {
 export function readSettings(): Settings {
   if (cache) return cache
   try {
-    const raw = readFileSync(settingsPath(), 'utf8')
+    let raw = readFileSync(settingsPath(), 'utf8')
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
     const parsed = JSON.parse(raw) as unknown
     const version =
       parsed !== null && typeof parsed === 'object' ? (parsed as { schemaVersion?: unknown }).schemaVersion : undefined
-    if (version !== 3) backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.v2.bak.json'))
+    if (version !== DEFAULT_SETTINGS.schemaVersion) backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.v2.bak.json'))
     cache = migrateSettings(parsed)
   } catch {
+    // The file exists but could not be read as settings (backupOnce does nothing when it
+    // is simply missing). Keep a copy before the defaults overwrite it on the next save.
+    backupOnce(settingsPath(), join(app.getPath('userData'), 'settings.corrupt.bak.json'))
     cache = { ...DEFAULT_SETTINGS }
   }
   return cache
