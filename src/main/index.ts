@@ -161,6 +161,7 @@ async function ensureWelcomeNote(): Promise<string | undefined> {
     } catch {
       await writeAtomic(target, WELCOME_NOTE)
     }
+    writeSettings({ seenWelcome: true })
     return target
   } catch (error) {
     log.warn('Could not create the welcome note', error)

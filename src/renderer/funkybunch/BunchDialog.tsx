@@ -16,8 +16,8 @@ export function BunchDialog({
   onClose
 }: {
   existing?: Bunch
-  /** Members to tick when starting a bunch from a team board cell. */
-  preset?: { skillIds: string[]; domainIds: string[] }
+  /** Ticks (and a raw folder) to start a new bunch from, such as the note's current ticks. */
+  preset?: { skillIds: string[]; domainIds: string[]; rawPath?: string }
   members: Member[]
   defaultRawPath?: string
   missingMemberIds: string[]
@@ -27,7 +27,7 @@ export function BunchDialog({
 }) {
   const [name, setName] = useState(existing?.name ?? '')
   const [emoji, setEmoji] = useState(existing?.emoji ?? BUNCH_EMOJI[0])
-  const [rawPath, setRawPath] = useState(existing?.rawPath || defaultRawPath || '')
+  const [rawPath, setRawPath] = useState(existing?.rawPath || preset?.rawPath || defaultRawPath || '')
   const [skillIds, setSkillIds] = useState<string[]>(existing?.skillIds ?? preset?.skillIds ?? [])
   const [domainIds, setDomainIds] = useState<string[]>(existing?.domainIds ?? preset?.domainIds ?? [])
   const [error, setError] = useState('')
@@ -109,7 +109,7 @@ export function BunchDialog({
       </Field>
       <Field label="Skills" group>
         <div className="folder-checks">
-          {skills.length === 0 && <p className="muted">No skills yet. Add one from the team board.</p>}
+          {skills.length === 0 && <p className="muted">No skills yet. Add one in the Funky Bunch pane.</p>}
           {skills.map((skill) => (
             <label key={skill.id} className="check">
               <input
@@ -131,7 +131,7 @@ export function BunchDialog({
       </Field>
       <Field label="Domains" group>
         <div className="folder-checks">
-          {domains.length === 0 && <p className="muted">No domains yet. Add one from the team board.</p>}
+          {domains.length === 0 && <p className="muted">No domains yet. Add one in the Funky Bunch pane.</p>}
           {domains.map((domain) => (
             <label key={domain.id} className="check">
               <input

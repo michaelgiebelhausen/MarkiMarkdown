@@ -50,7 +50,8 @@ test('filing to a bunch writes one stamped copy into raw and moves the note ther
   expect(text).toContain('# Lecture Notes')
   expect(text).toContain('Some content about memory.')
 
-  await expect(h.page.locator('.chip-places')).toHaveText('study')
+  // The YAML still names the bunch, so the File button stays in the top bar until Task 11 removes it.
+  await expect(h.page.getByRole('button', { name: 'study bunch' })).toHaveAttribute('aria-pressed', 'true')
   expect(h.errors).toEqual([])
 })
 
@@ -88,15 +89,15 @@ test('a bunch whose raw folder is missing is flagged and cannot be filed to', as
   })
   await expect(h.page.locator('.pm-content')).toContainText('Lecture Notes')
 
-  const tile = h.page.getByRole('button', { name: 'study bunch' })
-  await expect(tile).toHaveClass(/tile-unavailable/)
-  await tile.click()
+  const chip = h.page.getByRole('button', { name: 'study bunch' })
+  await expect(chip).toHaveClass(/bunch-chip-unavailable/)
+  await chip.click()
   await expect(h.page.getByRole('button', { name: 'File to study' })).toBeDisabled()
   await expect(h.page.locator('.blocked')).toContainText('cannot be reached')
   expect(h.errors).toEqual([])
 })
 
-test('a member whose folder is missing is flagged on the board but filing still works', async () => {
+test('a member whose folder is missing is flagged in the grid but filing still works', async () => {
   const dirs = prepare()
   const notePath = join(dirs.downloads, 'lecture-notes.md')
   writeFileSync(notePath, NOTE, 'utf8')
@@ -113,10 +114,7 @@ test('a member whose folder is missing is flagged on the board but filing still 
   })
   await expect(h.page.locator('.pm-content')).toContainText('Lecture Notes')
 
-  await h.page.getByRole('button', { name: 'Team board' }).click()
-  const board = h.page.getByRole('dialog', { name: 'Team board' })
-  await expect(board.locator('.board-warn')).toHaveCount(1)
-  await board.getByRole('button', { name: 'Done' }).click()
+  await expect(h.page.locator('.pane-bunch .board-warn')).toHaveCount(1)
 
   await h.page.getByRole('button', { name: 'study bunch' }).click({ button: 'right' })
   const bunchDialog = h.page.getByRole('dialog', { name: 'Edit bunch' })

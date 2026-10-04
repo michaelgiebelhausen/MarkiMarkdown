@@ -5,10 +5,9 @@ import { CodePane, type CodeCommands } from './editors/CodePane'
 import { RenderedPane, type RenderedCommands } from './editors/RenderedPane'
 import { SyncController } from './editors/sync'
 import { PropertiesPanel } from './frontmatter/PropertiesPanel'
-import { Strip } from './funkybunch/Strip'
 import { MemberDialog } from './funkybunch/MemberDialog'
 import { BunchDialog } from './funkybunch/BunchDialog'
-import { TeamBoard } from './funkybunch/TeamBoard'
+import { LocationsPane } from './funkybunch/LocationsPane'
 import { SettingsDialog } from './ui/SettingsDialog'
 import { HelpDialog } from './ui/HelpDialog'
 import { PromptDialog } from './ui/PromptDialog'
@@ -29,15 +28,15 @@ import { tidyMarkdown } from '@shared/markdown/tidy'
 import { buildStamp } from '@shared/bunch'
 import { lastBunchFor } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
+import { applyTicks, readTicks, type Ticks } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
 const sync = new SyncController()
 
 type DialogState =
-  | { kind: 'member'; existing?: Member; presetKind?: MemberKind; from?: 'board' }
-  | { kind: 'bunch'; existing?: Bunch; preset?: { skillIds: string[]; domainIds: string[] }; from?: 'board' }
-  | { kind: 'board' }
+  | { kind: 'member'; existing?: Member; presetKind?: MemberKind; presetName?: string }
+  | { kind: 'bunch'; existing?: Bunch; preset?: { skillIds: string[]; domainIds: string[]; rawPath?: string } }
   | { kind: 'settings' }
   | { kind: 'help' }
   | null
@@ -45,7 +44,6 @@ type DialogState =
 export default function App() {
   const doc = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [selectedBunchId, setSelectedBunchId] = useState<string | null>(null)
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [hiddenPanes, setHiddenPanes] = useState<PaneKey[]>([])
   const [toasts, setToasts] = useState<ToastMessage[]>([])
@@ -58,7 +56,6 @@ export default function App() {
   const aiRun = useRef(0)
   const [askingLink, setAskingLink] = useState(false)
   const filingInFlight = useRef(false)
-  const [fileWhenReady, setFileWhenReady] = useState(false)
   const toastId = useRef(1)
 
   const pushToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
@@ -109,16 +106,80 @@ export default function App() {
 
   const noteId = frontMatter.ok && typeof frontMatter.data.id === 'string' ? frontMatter.data.id : ''
 
+  const ticks = useMemo(() => readTicks(doc.frontMatterRaw, members), [doc.frontMatterRaw, members])
+
+  /** The bunch the note's YAML names, if it is one of ours. */
+  const activeBunch = useMemo(() => {
+    const name = ticks.bunch?.toLowerCase()
+    return name ? (bunches.find((b) => b.name.toLowerCase() === name) ?? null) : null
+  }, [ticks.bunch, bunches])
+
   const lastBunchId = useMemo(() => lastBunchFor(ledger, noteId), [ledger, noteId])
 
   const plan = useMemo(
-    () => planFiling({ bunches, members, selectedId: selectedBunchId, lastBunchId, missingRawPaths: missingRaw }),
-    [bunches, members, selectedBunchId, lastBunchId, missingRaw]
+    () => planFiling({ bunches, members, selectedId: activeBunch?.id ?? null, lastBunchId, missingRawPaths: missingRaw }),
+    [bunches, members, activeBunch, lastBunchId, missingRaw]
   )
 
-  const selectBunch = useCallback((id: string) => {
-    setSelectedBunchId((current) => (current === id ? null : id))
-  }, [])
+  /** The one way the grid and the chips change the note: rewrite its YAML as one undo step. */
+  const writeTicks = useCallback(
+    (next: Ticks, bunch?: string | null) => {
+      if (!settings) return
+      const raw = applyTicks(store.state.frontMatterRaw, next, members, {
+        mirrorTags: settings.mirrorTicksAsTags,
+        preset: settings.frontMatterPreset,
+        bunch,
+        eol: store.state.eol,
+        newId: ulid(),
+        now: nowLocalIso(),
+        title: suggestTitle(store.state.body)
+      })
+      if (raw === null) {
+        pushToast({ text: "This note's YAML can't be changed safely from here. Fix it in the Raw Markdown pane first.", tone: 'warn' })
+        return
+      }
+      store.commitUndoGroup()
+      store.setFrontMatter(raw, null)
+      store.commitUndoGroup()
+    },
+    [settings, members, pushToast]
+  )
+
+  const flip = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
+
+  const toggleSkill = useCallback(
+    (id: string) => writeTicks({ skillIds: flip(ticks.skillIds, id), domainIds: ticks.domainIds }),
+    [writeTicks, ticks]
+  )
+
+  const toggleDomain = useCallback(
+    (id: string) => writeTicks({ skillIds: ticks.skillIds, domainIds: flip(ticks.domainIds, id) }),
+    [writeTicks, ticks]
+  )
+
+  const toggleCell = useCallback(
+    (skillId: string, domainId: string) => {
+      const both = ticks.skillIds.includes(skillId) && ticks.domainIds.includes(domainId)
+      const add = (list: string[], id: string) => (list.includes(id) ? list : [...list, id])
+      writeTicks(
+        both
+          ? { skillIds: ticks.skillIds.filter((x) => x !== skillId), domainIds: ticks.domainIds.filter((x) => x !== domainId) }
+          : { skillIds: add(ticks.skillIds, skillId), domainIds: add(ticks.domainIds, domainId) }
+      )
+    },
+    [writeTicks, ticks]
+  )
+
+  /** Clicking the active bunch clears the bunch name but keeps the ticks. */
+  const applyBunch = useCallback(
+    (id: string) => {
+      const bunch = bunches.find((b) => b.id === id)
+      if (!bunch) return
+      if (activeBunch?.id === bunch.id) writeTicks(ticks, null)
+      else writeTicks({ skillIds: bunch.skillIds, domainIds: bunch.domainIds }, bunch.name)
+    },
+    [bunches, activeBunch, writeTicks, ticks]
+  )
 
   /* ---------------- check folders really exist ---------------- */
 
@@ -169,7 +230,6 @@ export default function App() {
         return
       }
       store.load(result.file)
-      setSelectedBunchId(null)
     },
     [pushToast]
   )
@@ -390,7 +450,6 @@ export default function App() {
     const writtenPath = outcome.writtenPath
     store.setFileName(baseName(writtenPath) || fileName)
     store.afterFiling([writtenPath], content)
-    setSelectedBunchId(null)
 
     const entry: LedgerEntry = {
       noteId: id,
@@ -431,15 +490,6 @@ export default function App() {
       }
     })
   }, [plan, doc, members, bunches, noteId, frontMatter, settings, pushToast, openFile, saveSettings])
-
-  // Dropping the note on a tile selects it first; file once that has taken effect.
-  useEffect(() => {
-    if (!fileWhenReady) return
-    setFileWhenReady(false)
-    if (plan.canFile) void runFiling()
-    else if (plan.blockedReason) pushToast({ text: plan.blockedReason, tone: 'warn' })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileWhenReady, plan.canFile])
 
   /* ---------------- actions from the menu and the top bar ---------------- */
 
@@ -580,21 +630,14 @@ export default function App() {
 
   /* ---------------- roster and bunch editing ---------------- */
 
-  // A dialog opened from the team board goes back to the board when it closes.
-  const closeDialog = useCallback(() => {
-    setDialog((current) =>
-      current && (current.kind === 'member' || current.kind === 'bunch') && current.from === 'board'
-        ? { kind: 'board' }
-        : null
-    )
-  }, [])
+  const closeDialog = useCallback(() => setDialog(null), [])
 
   const upsertMember = useCallback(
     async (member: Member) => {
       const next = members.some((m) => m.id === member.id)
         ? members.map((m) => (m.id === member.id ? member : m))
         : [...members, member]
-      const result = await saveSettings({ members: next, seenWelcome: true })
+      const result = await saveSettings({ members: next })
       if (!result.ok) {
         pushToast({ text: result.message, tone: 'warn' })
         return
@@ -628,7 +671,7 @@ export default function App() {
       const next = bunches.some((b) => b.id === bunch.id)
         ? bunches.map((b) => (b.id === bunch.id ? bunch : b))
         : [...bunches, bunch]
-      const result = await saveSettings({ bunches: next, seenWelcome: true })
+      const result = await saveSettings({ bunches: next })
       if (!result.ok) {
         pushToast({ text: result.message, tone: 'warn' })
         return
@@ -645,7 +688,6 @@ export default function App() {
         pushToast({ text: result.message, tone: 'warn' })
         return
       }
-      setSelectedBunchId((current) => (current === id ? null : current))
       closeDialog()
     },
     [bunches, saveSettings, closeDialog, pushToast]
@@ -659,23 +701,6 @@ export default function App() {
     [bunches]
   )
 
-  const editMemberFromBoard = useCallback(
-    (id: string) => {
-      const member = members.find((m) => m.id === id)
-      if (member) setDialog({ kind: 'member', existing: member, from: 'board' })
-    },
-    [members]
-  )
-
-  const openCell = useCallback(
-    (skillId: string, domainId: string) => {
-      const matches = bunches.filter((b) => b.skillIds.includes(skillId) && b.domainIds.includes(domainId))
-      if (matches.length === 1) setDialog({ kind: 'bunch', existing: matches[0], from: 'board' })
-      else setDialog({ kind: 'bunch', preset: { skillIds: [skillId], domainIds: [domainId] }, from: 'board' })
-    },
-    [bunches]
-  )
-
   /* ---------------- keyboard ---------------- */
 
   useEffect(() => {
@@ -685,16 +710,16 @@ export default function App() {
       const digit = /^Digit([1-9])$/.exec(event.code)
       if (event.shiftKey && digit) {
         const index = Number(digit[1]) - 1
-        const tile = plan.tiles[index]
-        if (tile) {
+        const bunch = bunches[index]
+        if (bunch) {
           event.preventDefault()
-          selectBunch(tile.id)
+          applyBunch(bunch.id)
         }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [plan.tiles, selectBunch])
+  }, [bunches, applyBunch])
 
   // Typing bursts collapse into one undo step.
   useEffect(() => {
@@ -720,25 +745,8 @@ export default function App() {
 
   if (!settings) return <div className="booting">Opening MarkiMarkdown...</div>
 
-  const showCoachmark = !settings.seenWelcome && members.length === 0 && bunches.length === 0
-
   return (
     <div className="app">
-      <Strip
-        plan={plan}
-        onSelect={selectBunch}
-        onAddBunch={() => setDialog({ kind: 'bunch' })}
-        onEditBunch={editBunch}
-        onOpenBoard={() => setDialog({ kind: 'board' })}
-        onSettings={() => setDialog({ kind: 'settings' })}
-        onDropNote={(id) => {
-          setSelectedBunchId(id)
-          setFileWhenReady(true)
-        }}
-        showCoachmark={showCoachmark}
-        onDismissCoachmark={() => void saveSettings({ seenWelcome: true })}
-      />
-
       <div className="workspace">
         <TopBar
           fileName={doc.fileName}
@@ -754,7 +762,7 @@ export default function App() {
           onTogglePane={togglePaneKey}
           busy={busy}
           onFile={() => void runFiling()}
-          onClearSelection={() => setSelectedBunchId(null)}
+          onClearSelection={() => activeBunch && applyBunch(activeBunch.id)}
           onMenu={handleAction}
           onCancelBusy={() => {
             aiRun.current += 1
@@ -771,9 +779,36 @@ export default function App() {
             if (key === 'bunch') {
               return (
                 <section key="bunch" className="pane pane-bunch" aria-label="Funky Bunch">
-                  <div className="locations">
-                    <p className="muted">Funky Bunch</p>
-                  </div>
+                  <LocationsPane
+                    ticks={ticks}
+                    members={members}
+                    bunches={bunches}
+                    ledger={ledger}
+                    missingMemberIds={missingMemberIds}
+                    missingRawPaths={missingRaw}
+                    activeBunchId={activeBunch?.id ?? null}
+                    onToggleSkill={toggleSkill}
+                    onToggleDomain={toggleDomain}
+                    onToggleCell={toggleCell}
+                    onApplyBunch={applyBunch}
+                    onEditBunch={editBunch}
+                    onSaveAsBunch={() =>
+                      setDialog({
+                        kind: 'bunch',
+                        preset: {
+                          skillIds: ticks.skillIds,
+                          domainIds: ticks.domainIds,
+                          rawPath: activeBunch?.rawPath || settings.defaultRawPath || ''
+                        }
+                      })
+                    }
+                    onEditMember={(id) => {
+                      const member = members.find((m) => m.id === id)
+                      if (member) setDialog({ kind: 'member', existing: member })
+                    }}
+                    onAddMember={(kind, name) => setDialog({ kind: 'member', presetKind: kind, presetName: name })}
+                    onOpenHelp={() => setDialog({ kind: 'help' })}
+                  />
                 </section>
               )
             }
@@ -831,23 +866,12 @@ export default function App() {
 
       <ToastStack toasts={toasts} dismiss={dismissToast} />
 
-      {dialog?.kind === 'board' && (
-        <TeamBoard
-          members={members}
-          bunches={bunches}
-          ledger={ledger}
-          missingMemberIds={missingMemberIds}
-          onAddMember={(kind) => setDialog({ kind: 'member', presetKind: kind, from: 'board' })}
-          onEditMember={editMemberFromBoard}
-          onCell={openCell}
-          onClose={() => setDialog(null)}
-        />
-      )}
       {dialog?.kind === 'member' && (
         <MemberDialog
           key={dialog.existing?.id ?? 'new-member'}
           existing={dialog.existing}
           presetKind={dialog.presetKind}
+          presetName={dialog.presetName}
           siblings={members}
           onSave={upsertMember}
           onDelete={dialog.existing ? () => void removeMember(dialog.existing!.id) : undefined}

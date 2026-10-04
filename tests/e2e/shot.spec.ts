@@ -92,15 +92,7 @@ test('capture the interface', async () => {
   await page.getByRole('button', { name: 'study bunch' }).click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(OUT as string, 'marki-03-selected.png') })
-  await page.locator('.strip').screenshot({ path: join(OUT as string, 'marki-04-strip.png') })
-  console.log('STRIP TILES:', JSON.stringify(await page.evaluate(() =>
-    [...document.querySelectorAll('.strip .tile')].map((t) => ({
-      label: t.getAttribute('aria-label'),
-      cls: t.className,
-      w: Math.round(t.getBoundingClientRect().width),
-      h: Math.round(t.getBoundingClientRect().height)
-    }))
-  )))
+  await page.locator('.pane-bunch').screenshot({ path: join(OUT as string, 'marki-04-bunch-pane.png') })
 
   await app.close()
 })

@@ -39,6 +39,7 @@ function defaultEmoji(kind: MemberKind): string {
 export function MemberDialog({
   existing,
   presetKind,
+  presetName,
   siblings,
   onSave,
   onDelete,
@@ -47,6 +48,8 @@ export function MemberDialog({
   existing?: Member
   /** The kind the student asked for, from an "Add a skill" or "Add a domain" button. */
   presetKind?: MemberKind
+  /** A name to start with, from an unknown name in the note's YAML. */
+  presetName?: string
   /** Everyone already in the roster, so we can spot a duplicate folder. */
   siblings: Member[]
   onSave: (member: Member) => void
@@ -54,7 +57,7 @@ export function MemberDialog({
   onClose: () => void
 }) {
   const [kind, setKind] = useState<MemberKind>(existing?.kind ?? presetKind ?? 'domain')
-  const [name, setName] = useState(existing?.name ?? '')
+  const [name, setName] = useState(existing?.name ?? presetName ?? '')
   const [emoji, setEmoji] = useState(existing?.emoji ?? defaultEmoji(existing?.kind ?? presetKind ?? 'domain'))
   const [path, setPath] = useState(existing?.path ?? '')
   const [error, setError] = useState('')

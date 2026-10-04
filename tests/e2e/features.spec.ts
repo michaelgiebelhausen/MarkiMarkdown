@@ -22,7 +22,8 @@ test('undo after filing puts the original back and removes the filed copy', asyn
   expect(existsSync(join(dirs.raw, 'undo-me.md'))).toBe(true)
   expect(existsSync(notePath)).toBe(false)
 
-  await h.page.getByRole('button', { name: 'Undo' }).click()
+  // exact, because the properties summary now shows the title "Undo Me" too
+  await h.page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(h.page.locator('.toast')).toContainText('Put back', { timeout: 20000 })
   expect(existsSync(notePath)).toBe(true)
   expect(readFileSync(notePath, 'utf8')).toContain('Original words.')

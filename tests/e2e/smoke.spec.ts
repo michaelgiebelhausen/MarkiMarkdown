@@ -13,7 +13,7 @@ test('the window opens with both panes and no errors', async () => {
   h = await launch(prepare())
   await expect(h.page.locator('.pane-code')).toBeVisible()
   await expect(h.page.locator('.pane-rendered')).toBeVisible()
-  await expect(h.page.locator('.strip')).toBeVisible()
+  await expect(h.page.locator('.pane-bunch')).toBeVisible()
   expect(h.errors).toEqual([])
 })
 

@@ -18,15 +18,13 @@ async function openWith(note: string, name = 'note.md') {
   return { harness, notePath, dirs }
 }
 
-test('dragging the note onto a bunch tile files it', async () => {
-  const { harness, dirs, notePath } = await openWith('# Drag me\n\nBody.\n', 'drag.md')
+test('dragging the note onto a bunch chip applies that bunch', async () => {
+  const { harness, dirs } = await openWith('# Drag me\n\nBody.\n', 'drag.md')
   h = harness
 
   await h.page.locator('.chip').dragTo(h.page.getByRole('button', { name: 'study bunch' }))
-  await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
-
-  expect(existsSync(join(dirs.raw, 'drag.md'))).toBe(true)
-  expect(existsSync(notePath)).toBe(false)
+  await expect(h.page.locator('.cm-content')).toContainText('bunch: study')
+  expect(existsSync(join(dirs.raw, 'drag.md'))).toBe(false)
   expect(h.errors).toEqual([])
 })
 
@@ -69,15 +67,12 @@ test('a wikilink survives being made bold in the clean pane', async () => {
   expect(h.errors).toEqual([])
 })
 
-test('a note with unreadable properties is not filed with a made-up id', async () => {
+test('a note with unreadable properties cannot be given a bunch', async () => {
   const { harness, dirs } = await openWith('---\ntitle: My note: draft\n---\n\n# Body\n', 'broken.md')
   h = harness
   await expect(h.page.locator('.props-broken')).toBeVisible()
-
-  await h.page.getByRole('button', { name: 'study bunch' }).click()
-  await h.page.getByRole('button', { name: 'File to study' }).click()
-
-  await expect(h.page.locator('.toast')).toContainText('cannot be read', { timeout: 15000 })
+  await expect(h.page.getByRole('button', { name: 'study bunch' })).toBeDisabled()
+  await expect(h.page.getByRole('button', { name: /^File to/ })).toHaveCount(0)
   expect(existsSync(join(dirs.raw, 'broken.md'))).toBe(false)
   expect(h.errors).toEqual([])
 })
