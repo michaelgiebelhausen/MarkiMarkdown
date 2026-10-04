@@ -31,4 +31,6 @@ tick something in them. Archive copies carry `archived:` in place of `filed:`.
 File used to **move** the note into the raw folder (with Undo). Save with Archive now leaves the note where it
 is and adds a dated copy named `<name>-YYYY-MM-DD[-n].md`. So the same note (same `id`) can appear in the raw
 folder more than once: dedupe on `id` or `archived:`. Lists in the YAML are block lists, one item per line. The
-first tick adds `id`, `type` and `created` if they are missing, and archiving adds an `id`.
+first tick adds `id`, `type`, `title` (from the note's first heading) and `created` if they are missing, and
+archiving does the same, so every copy has an `id`. Archiving also rewrites `skill_paths` and `domain_paths` from
+your skills and domains, so each name has its path beside it (an empty one for a name you have not added yet).

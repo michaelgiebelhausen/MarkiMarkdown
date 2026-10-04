@@ -326,6 +326,21 @@ describe('applyTicks', () => {
     expect('bunch' in d).toBe(false)
   })
 
+  test('converting a 1.1 note renames its agent/ and artifact/ tags even with mirroring off', () => {
+    const raw =
+      '---\nagents:\n  - writer\nartifacts:\n  - Biology\ntags: [agent/writer, keep, artifact/Biology, skill/old, "#agent/x"]\n---\n'
+    const before = readTicks(raw, members)
+    const d = data(applyTicks(raw, before, members, { ...opts, mirrorTags: false }))
+    expect(d.skills).toEqual(['writer'])
+    expect(d.tags).toEqual(['keep', 'skill/old', 'skill/writer', 'domain/Biology', '#skill/x'])
+  })
+
+  test('with mirroring off, a note already on the new keys keeps its agent/ tags', () => {
+    const raw = '---\nskills: [writer]\ntags: [agent/writer]\n---\n'
+    const d = data(applyTicks(raw, readTicks(raw, members), members, { ...opts, mirrorTags: false }))
+    expect(d.tags).toEqual(['agent/writer'])
+  })
+
   test('keeps names nobody in the roster has, with an empty path', () => {
     const raw = '---\nskills: [writer, ghost]\n---\n'
     const d = data(applyTicks(raw, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts))

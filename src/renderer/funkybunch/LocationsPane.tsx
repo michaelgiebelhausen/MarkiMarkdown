@@ -13,9 +13,9 @@ interface Props {
   missingMemberIds: string[]
   missingRawPaths: string[]
   activeBunchId: string | null
-  /** Working folder, archive box and raw folder (Task 10). */
+  /** Working folder, archive box and raw folder. */
   locations?: ReactNode
-  /** The Save button (Task 10). */
+  /** The Save button. */
   footer?: ReactNode
   onToggleSkill: (id: string) => void
   onToggleDomain: (id: string) => void

@@ -146,6 +146,19 @@ export default function App() {
     [saveSettings]
   )
 
+  // Optimistic like the pane toggles, so a quick toggle after a drag builds on the new widths.
+  const setPaneWidths = useCallback(
+    (paneWidths: Settings['paneWidths']) => {
+      const current = settingsRef.current
+      if (!current) return
+      const next = { ...current, paneWidths }
+      settingsRef.current = next
+      setSettings(next)
+      void saveSettings({ paneWidths })
+    },
+    [saveSettings]
+  )
+
   const members = settings?.members ?? []
   const bunches = settings?.bunches ?? []
 
@@ -762,7 +775,7 @@ export default function App() {
         <PaneLayout
           panes={settings.panes}
           widths={settings.paneWidths}
-          onWidths={(paneWidths) => void saveSettings({ paneWidths })}
+          onWidths={setPaneWidths}
           onHiddenChange={setHiddenPanes}
           render={(key) => {
             if (key === 'bunch') {

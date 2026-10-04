@@ -29,6 +29,8 @@ test('the very first launch shows a welcome note and invites a first folder', as
   // a real note is open, not an empty screen
   await expect(page.locator('.pm-content')).toContainText('Welcome', { timeout: 15000 })
   await expect(page.locator('.cm-content')).toContainText('# Welcome')
+  // 1.2's own note, so an upgrader never reopens the 1.1 one
+  await expect(page.locator('.chip-name')).toHaveText('Welcome to MarkiMarkdown 1.2.md')
 
   // the Funky Bunch pane is on screen and explains how to start
   const pane = page.locator('.pane-bunch')

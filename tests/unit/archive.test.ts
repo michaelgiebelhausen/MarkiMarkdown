@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { BLOCK_REASONS, archiveName, archiveStem, freeName, planSave, type SaveInput } from '@shared/archive'
+import { BLOCK_REASONS, archiveStem, freeName, planSave, type SaveInput } from '@shared/archive'
+
+/** The name the archive copy gets, as the archive writer picks it. */
+const archiveName = (fileName: string, date: string, existing: string[]) => freeName(archiveStem(fileName, date), existing)
 
 describe('archive names', () => {
   test('the stem is the working name plus the date', () => {

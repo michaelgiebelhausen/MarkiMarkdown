@@ -162,12 +162,12 @@ describe('filing changes where the note lives', () => {
   test('an untitled note has no paths and cannot be saved silently', () => {
     const fresh = new DocumentStore()
     expect(fresh.state.paths).toEqual([])
-    expect(fresh.needsFileName()).toBe(true)
   })
 
-  test('a plain text file needs a name before it can be saved as markdown', () => {
+  test('a plain text file has no Markdown path until it is saved as one', () => {
     store.load(loaded('text\n', 'C:/downloads/notes.txt'))
-    expect(store.needsFileName()).toBe(true)
+    expect(store.state.paths).toEqual([])
+    expect(store.state.isPlainText).toBe(true)
   })
 })
 
@@ -198,42 +198,20 @@ describe('notifying listeners', () => {
 })
 
 describe('what the editor holds after filing', () => {
-  test('takes on the stamped text, so the next save cannot wipe the stamp', () => {
-    store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    const stamped = '---\nid: 01ABC\ntype: note\nskills: [librarian]\n---\n# Hello\n'
-
-    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: stamped })
-
-    expect(store.fullText()).toBe(stamped)
-    expect(store.state.frontMatterRaw).toContain('id: 01ABC')
-    expect(store.state.body).toBe('# Hello\n')
-    expect(store.state.dirty).toBe(false)
-  })
-
-  test('a later edit still counts as a change against the stamped text', () => {
-    store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: '---\nid: 01ABC\n---\n# Hello\n' })
-    expect(store.state.dirty).toBe(false)
-
-    store.setBody('# Hello there\n', null)
-    expect(store.state.dirty).toBe(true)
-    expect(store.fullText()).toBe('---\nid: 01ABC\n---\n# Hello there\n')
-  })
-
-  test('undoing past the filing does not lose the stamp', () => {
-    store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    store.afterFiling(['C:/sb/Inbox/notes.md'], { stampedText: '---\nid: 01ABC\n---\n# Hello\n' })
-    store.setBody('# Edited\n', null)
-    store.commitUndoGroup()
-    store.undo()
-    expect(store.fullText()).toContain('id: 01ABC')
-  })
-
-  test('still works when no stamped text is supplied', () => {
+  test('the text is left exactly as it was; only where it lives changes', () => {
     store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
     store.afterFiling(['C:/sb/Inbox/notes.md'])
     expect(store.fullText()).toBe('# Hello\n')
     expect(store.state.paths).toEqual(['C:/sb/Inbox/notes.md'])
+  })
+
+  test('a later edit still counts as a change against what was written', () => {
+    store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
+    store.afterFiling(['C:/sb/Inbox/notes.md'], { written: '# Hello\n' })
+    expect(store.state.dirty).toBe(false)
+
+    store.setBody('# Hello there\n', null)
+    expect(store.state.dirty).toBe(true)
   })
 })
 
@@ -281,13 +259,6 @@ describe('only what was written counts as saved', () => {
     store.setBody('one\n', null)
     expect(store.state.dirty).toBe(false)
   })
-
-  test('stamped text replaces the editor, separately from what was written', () => {
-    const stamped = '---\nid: 01ABC\n---\none\n'
-    store.afterFiling(['C:/sb/notes.md'], { stampedText: stamped, written: 'one\n' })
-    expect(store.fullText()).toBe(stamped)
-    expect(store.state.dirty).toBe(true)
-  })
 })
 
 describe('undo changes the text only, never where the note lives', () => {
@@ -321,7 +292,6 @@ describe('undo changes the text only, never where the note lives', () => {
     expect(store.state.body).toBe('# Plan\n')
     expect(store.state.paths).toEqual(['C:/sb/Plan.md'])
     expect(store.state.fileName).toBe('Plan.md')
-    expect(store.needsFileName()).toBe(false)
     expect(store.state.dirty).toBe(true)
   })
 
@@ -335,16 +305,6 @@ describe('undo changes the text only, never where the note lives', () => {
     expect(store.state.isPlainText).toBe(false)
     expect(store.state.paths).toEqual(['C:/downloads/notes.md'])
     expect(store.state.originalPath).toBeUndefined()
-    expect(store.needsFileName()).toBe(false)
-  })
-
-  test('undo keeps the sibling folders found since', () => {
-    store.load(loaded('one\n'))
-    store.setBody('two\n', null)
-    store.commitUndoGroup()
-    store.setSiblings(['C:/other/notes.md'])
-    store.undo()
-    expect(store.state.siblingPaths).toEqual(['C:/other/notes.md'])
   })
 })
 
@@ -401,7 +361,7 @@ describe('saying when a change came from undo or redo', () => {
     store.setBody('four\n', null)
     store.setFrontMatter(null, null)
     store.markSaved()
-    store.afterFiling(['C:/sb/notes.md'], { stampedText: '---\nid: 1\n---\nfour\n' })
+    store.afterFiling(['C:/sb/notes.md'], { written: 'four\n' })
     store.load(loaded('five\n'))
     store.reset()
     expect(store.historyStep).toBe(before)

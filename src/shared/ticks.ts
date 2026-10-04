@@ -255,6 +255,9 @@ export interface ApplyOptions {
   title: string
 }
 
+/** A 1.1 mirrored tag: its # (if any), and agent or artifact. */
+const OLD_MIRRORED_TAG = /^(#?)(agent|artifact)\//i
+
 function present(value: unknown): boolean {
   return value !== null && value !== undefined && String(value).trim().length > 0
 }
@@ -346,6 +349,19 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
       for (const name of skills.tagNames) add(`skill/${slug(name)}`)
       for (const name of domains.tagNames) add(`domain/${slug(name)}`)
       tags = { removeMatching: MIRRORED_TAG, append }
+    } else if (before.usedAliases && Array.isArray(data.tags)) {
+      // Mirroring is off, so no tags are written for the ticks; but moving a 1.1 note to
+      // the new keys still renames its 1.1 tags, agent/x to skill/x and artifact/x to
+      // domain/x, keeping the rest of each tag as written.
+      const append: string[] = []
+      for (const tag of data.tags) {
+        if (typeof tag !== 'string') continue
+        const old = OLD_MIRRORED_TAG.exec(tag)
+        if (!old) continue
+        const renamed = `${old[1]}${old[2].toLowerCase() === 'agent' ? 'skill' : 'domain'}/${tag.slice(old[0].length)}`
+        if (!append.includes(renamed)) append.push(renamed)
+      }
+      if (append.length > 0) tags = { removeMatching: OLD_MIRRORED_TAG, append }
     }
 
     const bunch = opts.bunch === undefined ? undefined : (opts.bunch ?? '').trim()

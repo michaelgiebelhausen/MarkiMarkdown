@@ -103,8 +103,6 @@ button:focus-visible,
   position: relative;
 }
 
-.pane + .pane { border-left: 1px solid var(--line); }
-
 .pane-inner {
   max-width: 70ch;
   margin: 0 auto;

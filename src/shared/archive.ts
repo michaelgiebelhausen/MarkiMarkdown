@@ -33,10 +33,6 @@ export function freeName(stem: string, existing: string[]): string {
   }
 }
 
-export function archiveName(fileName: string, date: string, existing: string[]): string {
-  return freeName(archiveStem(fileName, date), existing)
-}
-
 export const BLOCK_REASONS = {
   yaml: 'Fix the YAML first.',
   noRaw: 'Choose a raw folder to archive into.',

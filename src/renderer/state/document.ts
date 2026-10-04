@@ -18,8 +18,6 @@ export interface DocState {
   owner: Owner
   /** Opened from a .txt file, so we can offer to convert it. */
   isPlainText: boolean
-  /** Folders holding another copy of the same note id. */
-  siblingPaths: string[]
   /** Bumped whenever the body changes, so panes can tell a real change from an echo. */
   version: number
 }
@@ -40,7 +38,6 @@ const EMPTY: DocState = {
   dirty: false,
   owner: null,
   isPlainText: false,
-  siblingPaths: [],
   version: 0
 }
 
@@ -92,10 +89,6 @@ export class DocumentStore {
     return (this.state.frontMatterRaw ?? '') + this.state.body
   }
 
-  needsFileName(): boolean {
-    return this.state.paths.length === 0 || this.state.isPlainText
-  }
-
   canUndo(): boolean {
     return this.past.length > 0
   }
@@ -138,7 +131,6 @@ export class DocumentStore {
       dirty: false,
       owner: null,
       isPlainText,
-      siblingPaths: [],
       version: this.state.version + 1
     }
     this.past = []
@@ -210,11 +202,6 @@ export class DocumentStore {
     this.emit()
   }
 
-  setSiblings(paths: string[]): void {
-    this.state = { ...this.state, siblingPaths: paths }
-    this.emit()
-  }
-
   clearPlainText(): void {
     this.state = { ...this.state, isPlainText: false }
     this.emit()
@@ -246,8 +233,8 @@ export class DocumentStore {
   }
 
   /**
-   * Undo and redo bring back the text only. Where the note lives (its paths, name, origin,
-   * plain-text mode and siblings) always stays as it is now: undoing after a move or a
+   * Undo and redo bring back the text only. Where the note lives (its paths, name, origin
+   * and plain-text mode) always stays as it is now: undoing after a move or a
    * first save must never point the next save back at a file that is gone.
    */
   private restoreText(from: DocState): void {
@@ -282,22 +269,18 @@ export class DocumentStore {
    *
    * `written` is the text the file at these paths now holds, as for markSaved. Leave it out
    * for a move: the moved file still holds what was last saved, so whatever is unsaved
-   * stays unsaved. `stampedText` replaces what the editor holds; when it is given and
-   * `written` is not, the stamped text is taken to be what was written.
+   * stays unsaved.
    */
-  afterFiling(paths: string[], options: { written?: string; stampedText?: string } = {}): void {
-    const { written, stampedText } = options
-    const split = stampedText === undefined ? null : splitFrontMatter(stampedText)
+  afterFiling(paths: string[], options: { written?: string } = {}): void {
+    const { written } = options
     this.state = {
       ...this.state,
-      frontMatterRaw: split ? split.raw : this.state.frontMatterRaw,
-      body: split ? split.body : this.state.body,
       paths,
       originalPath: undefined,
       isPlainText: false,
       version: this.state.version + 1
     }
-    this.savedText = written ?? stampedText ?? this.savedText
+    this.savedText = written ?? this.savedText
     this.state = { ...this.state, dirty: this.fullText() !== this.savedText }
     this.emit()
   }

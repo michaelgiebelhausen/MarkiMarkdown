@@ -374,13 +374,15 @@ app.on('activate', () => {
 })
 
 /* ------------------------------------------------------------------ *
- * First run: a welcome note the student can actually file
+ * First run: a welcome note, written once and never overwritten
  * ------------------------------------------------------------------ */
 async function ensureWelcomeNote(): Promise<string | undefined> {
   const settings = readSettings()
   if (settings.seenWelcome) return undefined
   try {
-    const target = join(app.getPath('documents'), 'Welcome to MarkiMarkdown.md')
+    // 1.2 has its own welcome note. Someone upgrading from 1.1 who never saw a welcome note
+    // would otherwise reopen the old one, which is never overwritten: neither file ever is.
+    const target = join(app.getPath('documents'), 'Welcome to MarkiMarkdown 1.2.md')
     try {
       await fsp.access(target)
     } catch {

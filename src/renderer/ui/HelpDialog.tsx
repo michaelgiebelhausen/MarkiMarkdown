@@ -79,7 +79,11 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
         <tbody>
           <tr>
             <td><code>Ctrl/Cmd + S</code></td>
-            <td>save</td>
+            <td>save (and archive, when Archive / distribute is ticked)</td>
+          </tr>
+          <tr>
+            <td><code>Ctrl/Cmd + Shift + 1 … 9</code></td>
+            <td>apply bunch 1 to 9, in the order they appear</td>
           </tr>
           <tr>
             <td><code>Ctrl/Cmd + O</code></td>

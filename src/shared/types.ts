@@ -95,13 +95,3 @@ export interface AiProviderStatus {
   kind: 'claude' | 'ollama' | 'apiKey' | 'none'
   detail: string
 }
-
-export interface DiagnosticsReport {
-  appVersion: string
-  electron: string
-  platform: string
-  arch: string
-  ai: AiProviderStatus
-  memberCount: { skills: number; domains: number; bunches: number }
-  recentLog: string[]
-}
