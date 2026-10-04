@@ -4,6 +4,7 @@ import {
   parseFrontMatter,
   mergeFrontMatter,
   MIRRORED_TAG,
+  duplicateTopLevelKeys,
   stampNote,
   addArchived
 } from '@shared/markdown/frontmatter'
@@ -214,14 +215,56 @@ describe('mergeFrontMatter list edits', () => {
     expect(mergeFrontMatter(raw, edit([]))).toBe(raw)
   })
 
-  test('leaves a comma string, a mapping or an empty value completely alone', () => {
+  test('leaves a comma string, a mapping or a commented empty value completely alone', () => {
     for (const raw of [
       '---\ntags: exam-prep, skill/old\n---\n',
       '---\ntags:\n  a: skill/old\n---\n',
-      '---\ntags:\n---\n'
+      '---\ntags: # later\n---\n'
     ]) {
       expect(mergeFrontMatter(raw, edit(['skill/writer']))).toBe(raw)
     }
+  })
+
+  test('fills an empty value like a missing key when there is something to add', () => {
+    expect(mergeFrontMatter('---\ntags:\ntitle: x\n---\n', edit(['skill/writer']))).toBe(
+      '---\ntags:\n  - skill/writer\ntitle: x\n---\n'
+    )
+  })
+
+  test('leaves an empty value alone when there is nothing to add', () => {
+    const raw = '---\ntags:\n---\n'
+    expect(mergeFrontMatter(raw, edit([]))).toBe(raw)
+  })
+
+  test('removes #-prefixed mirrored tags too', () => {
+    const out = mergeFrontMatter('---\ntags: ["#skill/old", "#Domain/old", "#idea"]\n---\n', edit([]))
+    expect(out).toBe('---\ntags: ["#idea"]\n---\n')
+  })
+})
+
+describe('MIRRORED_TAG', () => {
+  test('matches the app namespaces with or without a leading #', () => {
+    for (const tag of ['skill/a', 'Domain/b', 'agent/c', 'artifact/d', '#skill/a', '#DOMAIN/b']) {
+      expect(MIRRORED_TAG.test(tag)).toBe(true)
+    }
+    for (const tag of ['skills/a', 'idea', '##skill/a', 'my-skill/a', '#idea']) {
+      expect(MIRRORED_TAG.test(tag)).toBe(false)
+    }
+  })
+})
+
+describe('duplicateTopLevelKeys', () => {
+  test('lists each top-level key written more than once', () => {
+    expect(duplicateTopLevelKeys('---\nskills: [a]\ntitle: x\nskills: [b]\ntags: []\ntags: []\n---\n')).toEqual([
+      'skills',
+      'tags'
+    ])
+  })
+
+  test('is empty for ordinary, empty or unreadable front matter', () => {
+    expect(duplicateTopLevelKeys('---\nskills: [a]\nnested:\n  skills: [b]\n---\n')).toEqual([])
+    expect(duplicateTopLevelKeys('---\n---\n')).toEqual([])
+    expect(duplicateTopLevelKeys('---\ntitle: My note: draft\n---\n')).toEqual([])
   })
 })
 

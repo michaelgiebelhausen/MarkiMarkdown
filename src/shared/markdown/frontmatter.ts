@@ -113,8 +113,30 @@ export function parseFrontMatter(raw: string): ParseResult {
 /** Keys a second-brain script greps line by line, so they are written one item per line. */
 const BLOCK_LIST_KEYS = new Set(['skills', 'skill_paths', 'domains', 'domain_paths'])
 
-/** Tags in these namespaces, in any case, belong to the app and are rewritten from the ticks. 1.1 used agent/ and artifact/. */
-export const MIRRORED_TAG = /^(skill|domain|agent|artifact)\//i
+/**
+ * Tags in these namespaces, in any case and with or without Obsidian's leading #, belong
+ * to the app and are rewritten from the ticks. 1.1 used agent/ and artifact/.
+ */
+export const MIRRORED_TAG = /^#?(skill|domain|agent|artifact)\//i
+
+/**
+ * Top-level keys written more than once. The parser accepts them, but the parsed data
+ * keeps only one, so a writer that trusted it would silently drop the other. Empty when
+ * the front matter cannot be read at all.
+ */
+export function duplicateTopLevelKeys(raw: string): string[] {
+  const doc = readDocument(raw)
+  if (!doc || !isMap(doc.contents)) return []
+  const seen = new Set<string>()
+  const repeated: string[] = []
+  for (const pair of doc.contents.items) {
+    if (!isScalar(pair.key)) continue
+    const key = String(pair.key.value)
+    if (seen.has(key) && !repeated.includes(key)) repeated.push(key)
+    seen.add(key)
+  }
+  return repeated
+}
 
 /**
  * A patch value that edits a list in place instead of replacing it: items matching
@@ -132,14 +154,21 @@ export function isListEdit(value: unknown): value is ListEdit {
   return edit.removeMatching instanceof RegExp && Array.isArray(edit.append)
 }
 
+/** `key:` with nothing after it: no comment, anchor or explicit tag that a rewrite would lose. */
+function isBareEmpty(node: unknown): boolean {
+  if (node === null || node === undefined) return true
+  if (!isScalar(node) || node.value !== null) return false
+  return !node.comment && !node.commentBefore && !node.anchor && !node.tag
+}
+
 /**
- * Applies a ListEdit to one key. A missing key becomes a block list, but only when
- * there is something to add. A comma string, a mapping or an empty value is not a
- * list we can edit safely, so it is left exactly as written. When nothing would
- * change the node is not touched at all.
+ * Applies a ListEdit to one key. A missing key, or one with a bare empty value, becomes
+ * a block list, but only when there is something to add. A comma string, a mapping or
+ * an empty value carrying a comment is not a list we can edit safely, so it is left
+ * exactly as written. When nothing would change the node is not touched at all.
  */
 function applyListEdit(doc: Document, key: string, edit: ListEdit): void {
-  if (!doc.has(key)) {
+  if (!doc.has(key) || isBareEmpty(doc.get(key, true))) {
     if (edit.append.length === 0) return
     const node = doc.createNode(edit.append) as YAMLSeq
     node.flow = false

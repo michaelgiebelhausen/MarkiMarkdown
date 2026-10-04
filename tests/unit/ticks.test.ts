@@ -78,6 +78,22 @@ describe('readTicks', () => {
     }
   })
 
+  test('a mapping or a nested list inside a list reports ok false', () => {
+    for (const key of ['skills', 'domains', 'agents', 'artifacts']) {
+      expect(readTicks(`---\n${key}:\n  - writer\n  - name: editor\n---\n`, members).ok).toBe(false)
+      expect(readTicks(`---\n${key}:\n  - writer\n  - [editor, Biology]\n---\n`, members).ok).toBe(false)
+    }
+  })
+
+  test('a list key written twice reports ok false', () => {
+    for (const key of ['skills', 'domains', 'agents', 'artifacts', 'tags']) {
+      const r = readTicks(`---\n${key}: [writer]\ntitle: x\n${key}: [editor]\n---\n`, members)
+      expect(r.ok).toBe(false)
+    }
+    // any other key written twice is the student's business
+    expect(readTicks('---\ntitle: a\ntitle: b\nskills: [writer]\n---\n', members).ok).toBe(true)
+  })
+
   test('counts a repeated name once', () => {
     expect(readTicks('---\nskills: [writer, Writer]\n---\n', members).skillIds).toEqual(['s1'])
   })
@@ -235,6 +251,30 @@ describe('applyTicks', () => {
     expect(out).toContain('tags: exam-prep, notes\n')
   })
 
+  test('an empty tags key is filled like a missing one', () => {
+    const out = applyTicks('---\ntitle: x\ntags:\n---\n', { skillIds: ['s1'], domainIds: [] }, members, opts) as string
+    expect(out).toContain('tags:\n  - skill/writer\n')
+    expect(data(out).tags).toEqual(['skill/writer'])
+  })
+
+  test('an empty tags key with nothing to add stays as written', () => {
+    const out = applyTicks('---\ntitle: x\ntags:\n---\n', { skillIds: [], domainIds: [] }, members, opts) as string
+    expect(out).toContain('tags:')
+    expect(data(out).tags).toBeNull()
+  })
+
+  test('an empty tags key that carries a comment is left alone', () => {
+    const out = applyTicks('---\ntags: # fill in later\n---\n', { skillIds: ['s1'], domainIds: [] }, members, opts) as string
+    expect(out).toContain('# fill in later')
+    expect(data(out).tags).toBeNull()
+  })
+
+  test('replaces a #-prefixed mirrored tag instead of keeping it beside the new one', () => {
+    const raw = '---\ntags: ["#skill/old", "#idea", keep]\n---\n'
+    const d = data(applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts))
+    expect(d.tags).toEqual(['#idea', 'keep', 'skill/writer'])
+  })
+
   test('a new tags key is a block list', () => {
     const out = applyTicks(null, { skillIds: ['s1'], domainIds: ['d1'] }, members, opts) as string
     expect(out).toContain('tags:\n  - skill/writer\n  - domain/biology\n')
@@ -249,6 +289,16 @@ describe('applyTicks', () => {
     for (const key of ['skills', 'domains', 'agents', 'artifacts', 'tags']) {
       expect(applyTicks(`---\n${key}:\n  a: writer\n---\n`, { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
     }
+  })
+
+  test('refuses to rewrite a list holding a mapping, so the mapping is never dropped', () => {
+    const raw = '---\nskills:\n  - writer\n  - name: editor\n    note: mine\n---\n'
+    expect(applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
+  })
+
+  test('refuses to rewrite a list key written twice', () => {
+    const raw = '---\nskills: [writer]\nskills: [ghost]\n---\n'
+    expect(applyTicks(raw, { skillIds: ['s1'], domainIds: [] }, members, opts)).toBeNull()
   })
 
   test('never writes the same name twice, keeping the first and its path', () => {

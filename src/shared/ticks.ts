@@ -1,6 +1,7 @@
 import type { Member, MemberKind } from './types'
 import {
   MIRRORED_TAG,
+  duplicateTopLevelKeys,
   mergeFrontMatter,
   normaliseTags,
   parseFrontMatter,
@@ -21,8 +22,10 @@ export interface UnknownName {
 
 export interface TickReading extends Ticks {
   /**
-   * False when the front matter cannot be parsed, or when skills, domains, agents,
-   * artifacts or tags holds a mapping. Nothing else is meaningful then.
+   * False when the front matter cannot be parsed, when skills, domains, agents,
+   * artifacts or tags holds a mapping or is written twice, or when a skills, domains,
+   * agents or artifacts list holds something other than plain values. Nothing else is
+   * meaningful then.
    */
   ok: boolean
   /** Every name listed under skills and then 1.1 agents, known or not, as written. */
@@ -77,8 +80,16 @@ function names(value: unknown): string[] {
 /** Keys whose value ticks read as a list. A mapping in any of them cannot be ticked safely. */
 const LIST_KEYS = ['skills', 'domains', 'agents', 'artifacts', 'tags']
 
+/** Keys applyTicks rewrites wholesale from names, so every item must be a plain name. */
+const NAME_KEYS = ['skills', 'domains', 'agents', 'artifacts']
+
 function isMapping(value: unknown): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A list with a mapping or a nested list in it: rewriting it from names would drop that item. */
+function hasNonScalarItem(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => typeof item === 'object' && item !== null)
 }
 
 function findMember(members: Member[], kind: MemberKind, name: string): Member | undefined {
@@ -89,7 +100,9 @@ function findMember(members: Member[], kind: MemberKind, name: string): Member |
 /**
  * Which skills and domains a note is ticked for, read straight from its front matter.
  * Names come from the new key first, then from its 1.1 alias when that is also there.
- * A mapping where a list belongs reports ok false, as unreadable YAML does.
+ * A mapping where a list belongs, a list item that is not a plain value, or a list key
+ * written twice reports ok false, as unreadable YAML does: none of them can be ticked
+ * without losing something the student wrote.
  */
 export function readTicks(raw: string | null, members: Member[]): TickReading {
   if (raw === null) return empty(true)
@@ -97,6 +110,8 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
   if (!parsed.ok) return empty(false)
   const data = parsed.data
   if (LIST_KEYS.some((key) => isMapping(data[key]))) return empty(false)
+  if (NAME_KEYS.some((key) => hasNonScalarItem(data[key]))) return empty(false)
+  if (duplicateTopLevelKeys(raw).some((key) => LIST_KEYS.includes(key))) return empty(false)
 
   const both = (key: string, alias: string) => {
     const out = names(data[key])
@@ -160,8 +175,8 @@ function slug(name: string): string {
  * name is written twice in any case. The tags list is edited in place, so the student's
  * own tags keep their style, comments and quoting; tags written as a comma string are
  * left alone. Returns null, so the caller writes nothing, when the front matter cannot
- * be parsed, holds a mapping where a list belongs, or cannot be rewritten for any other
- * reason. It never throws.
+ * be parsed, holds a mapping where a list belongs (or inside a list of names), repeats a
+ * list key, or cannot be rewritten for any other reason. It never throws.
  */
 export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], opts: ApplyOptions): string | null {
   try {
