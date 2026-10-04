@@ -18,9 +18,9 @@ function isLedgerEntry(value: unknown): value is LedgerEntry {
   return (
     typeof v.noteId === 'string' &&
     typeof v.bunchId === 'string' &&
-    typeof v.filedAt === 'string' &&
-    isStringArray(v.agentIds) &&
-    isStringArray(v.artifactIds)
+    typeof v.archivedAt === 'string' &&
+    isStringArray(v.skillIds) &&
+    isStringArray(v.domainIds)
   )
 }
 

@@ -2,29 +2,29 @@ import { describe, expect, test } from 'vitest'
 import { proposeKind } from '@shared/memberKind'
 
 describe('proposeKind', () => {
-  test('a folder with CLAUDE.md is an agent', () => {
-    expect(proposeKind(['CLAUDE.md', 'notes.md'])).toBe('agent')
+  test('a folder with CLAUDE.md is a skill folder', () => {
+    expect(proposeKind(['CLAUDE.md', 'notes.md'])).toBe('skill')
   })
 
-  test('a folder with AGENTS.md is an agent', () => {
-    expect(proposeKind(['AGENTS.md'])).toBe('agent')
+  test('a folder with AGENTS.md is a skill folder', () => {
+    expect(proposeKind(['AGENTS.md'])).toBe('skill')
   })
 
-  test('a folder with a .claude directory is an agent', () => {
-    expect(proposeKind(['.claude', 'README.md'])).toBe('agent')
+  test('a folder with a .claude directory is a skill folder', () => {
+    expect(proposeKind(['.claude', 'README.md'])).toBe('skill')
   })
 
-  test('a folder with a skills directory is an agent', () => {
-    expect(proposeKind(['skills'])).toBe('agent')
+  test('a folder with a skills directory is a skill folder', () => {
+    expect(proposeKind(['skills'])).toBe('skill')
   })
 
   test('matching ignores case', () => {
-    expect(proposeKind(['claude.md'])).toBe('agent')
-    expect(proposeKind(['Skills'])).toBe('agent')
+    expect(proposeKind(['claude.md'])).toBe('skill')
+    expect(proposeKind(['Skills'])).toBe('skill')
   })
 
-  test('anything else is an artifact', () => {
-    expect(proposeKind(['chapter-1.md', 'figures'])).toBe('artifact')
-    expect(proposeKind([])).toBe('artifact')
+  test('anything else is a domain', () => {
+    expect(proposeKind(['chapter-1.md', 'figures'])).toBe('domain')
+    expect(proposeKind([])).toBe('domain')
   })
 })

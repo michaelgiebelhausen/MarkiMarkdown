@@ -18,12 +18,12 @@ export const WELCOME_NOTE = [
   '',
   'Your turn:',
   '',
-  '- [ ] Open the team board (the grid button on the left edge) and add an agent and an artifact',
+  '- [ ] Open the team board (the grid button on the left edge) and add a skill and a domain',
   '- [ ] Make a bunch, pick it, then press File',
   '',
   '---',
   '',
   'Filing writes one copy into the raw folder of the bunch you chose, stamped with',
-  'the agents and artifacts in that bunch. Your second brain takes it from there.',
+  'the skills and domains in that bunch. Your second brain takes it from there.',
   ''
 ].join('\n')

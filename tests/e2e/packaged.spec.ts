@@ -19,13 +19,13 @@ test('the packaged application starts, edits and files a note', async () => {
   writeFileSync(
     join(userData, 'settings.json'),
     JSON.stringify({
-      seenCoachmark: true,
+      seenWelcome: true,
       autosave: true,
       members: [
-        { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
-        { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') }
+        { id: 'a1', kind: 'skill', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
+        { id: 'x1', kind: 'domain', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') }
       ],
-      bunches: [{ id: 'b1', name: 'study', emoji: '\u{1F465}', rawPath: raw, agentIds: ['a1'], artifactIds: ['x1'] }]
+      bunches: [{ id: 'b1', name: 'study', emoji: '\u{1F465}', rawPath: raw, skillIds: ['a1'], domainIds: ['x1'] }]
     }),
     'utf8'
   )

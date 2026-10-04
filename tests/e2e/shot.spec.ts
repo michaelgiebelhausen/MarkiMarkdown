@@ -17,16 +17,16 @@ test('capture the interface', async () => {
   for (const d of [userData, downloads, raw]) mkdirSync(d, { recursive: true })
 
   writeFileSync(join(userData, 'settings.json'), JSON.stringify({
-    seenCoachmark: true,
+    seenWelcome: true,
     members: [
-      { id: 'a1', kind: 'agent', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
-      { id: 'a2', kind: 'agent', name: 'tutor', emoji: '\u{1F9D1}', path: join(root, 'tutor') },
-      { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') },
-      { id: 'x2', kind: 'artifact', name: 'startup', emoji: '\u{1F680}', path: join(root, 'startup') }
+      { id: 'a1', kind: 'skill', name: 'librarian', emoji: '\u{1F4DA}', path: join(root, 'librarian') },
+      { id: 'a2', kind: 'skill', name: 'tutor', emoji: '\u{1F9D1}', path: join(root, 'tutor') },
+      { id: 'x1', kind: 'domain', name: 'thesis', emoji: '\u{1F4D5}', path: join(root, 'thesis') },
+      { id: 'x2', kind: 'domain', name: 'startup', emoji: '\u{1F680}', path: join(root, 'startup') }
     ],
     bunches: [
-      { id: 'b1', name: 'study', emoji: '\u{1F393}', rawPath: raw, agentIds: ['a1', 'a2'], artifactIds: ['x1'] },
-      { id: 'b2', name: 'launch', emoji: '\u{1F680}', rawPath: raw, agentIds: ['a2'], artifactIds: ['x2'] }
+      { id: 'b1', name: 'study', emoji: '\u{1F393}', rawPath: raw, skillIds: ['a1', 'a2'], domainIds: ['x1'] },
+      { id: 'b2', name: 'launch', emoji: '\u{1F680}', rawPath: raw, skillIds: ['a2'], domainIds: ['x2'] }
     ]
   }), 'utf8')
 

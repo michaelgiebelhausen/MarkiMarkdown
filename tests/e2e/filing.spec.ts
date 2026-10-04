@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import { launch, prepare, team, bunch, agentMember, artifactMember, type Harness } from './helpers'
+import { launch, prepare, team, bunch, skillMember, domainMember, type Harness } from './helpers'
 
 let h: Harness
 
@@ -37,14 +37,14 @@ test('filing to a bunch writes one stamped copy into raw and moves the note ther
 
   const text = readFileSync(filed, 'utf8')
   expect(text).toContain('bunch: study')
-  expect(text).toContain('agents:\n  - librarian')
-  expect(text).toContain('agent_paths:')
+  expect(text).toContain('skills:\n  - librarian')
+  expect(text).toContain('skill_paths:')
   expect(text).toContain(dirs.agent.split(sep).join('/'))
-  expect(text).toContain('artifacts:\n  - thesis')
-  expect(text).toContain('artifact_paths:')
+  expect(text).toContain('domains:\n  - thesis')
+  expect(text).toContain('domain_paths:')
   expect(text).toContain(dirs.artifact.split(sep).join('/'))
-  expect(text).toContain('agent/librarian')
-  expect(text).toContain('artifact/thesis')
+  expect(text).toContain('skill/librarian')
+  expect(text).toContain('domain/thesis')
   expect(text).toContain('type: note')
   expect(text).toMatch(/id:\s*\S+/)
   expect(text).toContain('# Lecture Notes')
@@ -106,8 +106,8 @@ test('a member whose folder is missing is flagged on the board but filing still 
     settings: {
       ...team(dirs),
       members: [
-        agentMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
-        artifactMember('x1', 'thesis', '\u{1F4D5}', nowhere)
+        skillMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
+        domainMember('x1', 'thesis', '\u{1F4D5}', nowhere)
       ]
     }
   })
@@ -128,7 +128,7 @@ test('a member whose folder is missing is flagged on the board but filing still 
   await expect(h.page.locator('.toast')).toContainText('Filed to study', { timeout: 20000 })
 
   const text = readFileSync(join(dirs.raw, 'lecture-notes.md'), 'utf8')
-  expect(text).toContain('artifact_paths:')
+  expect(text).toContain('domain_paths:')
   expect(text).toContain(nowhere.split(sep).join('/'))
   expect(h.errors).toEqual([])
 })
@@ -167,6 +167,6 @@ test('an empty bunch cannot be filed to and says why', async () => {
   })
   await h.page.getByRole('button', { name: 'lonely bunch' }).click()
   await expect(h.page.getByRole('button', { name: 'File to lonely' })).toBeDisabled()
-  await expect(h.page.locator('.blocked')).toContainText('Add an agent or an artifact')
+  await expect(h.page.locator('.blocked')).toContainText('Add a skill or a domain')
   expect(h.errors).toEqual([])
 })

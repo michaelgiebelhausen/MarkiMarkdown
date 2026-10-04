@@ -242,9 +242,9 @@ export class DocumentStore {
   }
 
   /**
-   * Filing writes a stamped copy (id, agents, filed) to disk. The editor has to take
+   * Filing writes a stamped copy (id, skills, filed) to disk. The editor has to take
    * that same text on, or the next autosave would write the unstamped version back
-   * over it and the note would quietly lose the very details agents look for.
+   * over it and the note would quietly lose the very details a second brain looks for.
    */
   afterFiling(paths: string[], stampedText?: string): void {
     const split = stampedText === undefined ? null : splitFrontMatter(stampedText)

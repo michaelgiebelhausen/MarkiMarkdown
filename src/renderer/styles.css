@@ -363,7 +363,7 @@ button:focus-visible,
 }
 .props-chevron { color: var(--muted); font-size: 10px; }
 .props-title { font-weight: 550; }
-.props-empty, .props-agents { color: var(--muted); }
+.props-empty, .props-skills { color: var(--muted); }
 
 .badge {
   background: var(--accent-soft); color: var(--accent);

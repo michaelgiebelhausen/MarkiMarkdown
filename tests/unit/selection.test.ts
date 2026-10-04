@@ -3,13 +3,13 @@ import { planFiling, type SelectionInput } from '@renderer/funkybunch/selection'
 import type { Bunch, Member } from '@shared/types'
 
 const members: Member[] = [
-  { id: 'a1', kind: 'agent', name: 'librarian', emoji: '📚', path: '/agents/librarian' },
-  { id: 'x1', kind: 'artifact', name: 'thesis', emoji: '📕', path: '/artifacts/thesis' }
+  { id: 'a1', kind: 'skill', name: 'librarian', emoji: '📚', path: '/skills/librarian' },
+  { id: 'x1', kind: 'domain', name: 'thesis', emoji: '📕', path: '/domains/thesis' }
 ]
 
-const study: Bunch = { id: 'b1', name: 'study', emoji: '👥', rawPath: '/sb/raw', agentIds: ['a1'], artifactIds: ['x1'] }
-const empty: Bunch = { id: 'b2', name: 'lonely', emoji: '🫥', rawPath: '/sb/raw', agentIds: ['ghost'], artifactIds: [] }
-const noRaw: Bunch = { id: 'b3', name: 'later', emoji: '⏳', rawPath: '', agentIds: ['a1'], artifactIds: [] }
+const study: Bunch = { id: 'b1', name: 'study', emoji: '👥', rawPath: '/sb/raw', skillIds: ['a1'], domainIds: ['x1'] }
+const empty: Bunch = { id: 'b2', name: 'lonely', emoji: '🫥', rawPath: '/sb/raw', skillIds: ['ghost'], domainIds: [] }
+const noRaw: Bunch = { id: 'b3', name: 'later', emoji: '⏳', rawPath: '', skillIds: ['a1'], domainIds: [] }
 
 function input(over: Partial<SelectionInput> = {}): SelectionInput {
   return { bunches: [study, empty, noRaw], members, selectedId: null, missingRawPaths: [], ...over }
@@ -53,7 +53,7 @@ describe('planFiling with a bunch selected', () => {
     const plan = planFiling(input({ selectedId: 'b2' }))
     expect(plan.canFile).toBe(false)
     expect(plan.blockedReason).toContain('lonely')
-    expect(plan.blockedReason).toContain('Add an agent or an artifact')
+    expect(plan.blockedReason).toContain('Add a skill or a domain to lonely first.')
   })
 
   test('a bunch whose raw folder is missing is blocked and flagged', () => {

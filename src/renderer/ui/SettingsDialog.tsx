@@ -75,10 +75,10 @@ export function SettingsDialog({
       <label className="check">
         <input
           type="checkbox"
-          checked={settings.mirrorMembersAsTags}
-          onChange={(event) => void onSave({ mirrorMembersAsTags: event.target.checked })}
+          checked={settings.mirrorTicksAsTags}
+          onChange={(event) => void onSave({ mirrorTicksAsTags: event.target.checked })}
         />
-        <span>Also add each agent and artifact as a tag, like agent/study-coach (handy in Obsidian)</span>
+        <span>Also add each skill and domain as a tag, like skill/study-coach (handy in Obsidian)</span>
       </label>
 
       <h3 className="section-head">AI clean-up</h3>

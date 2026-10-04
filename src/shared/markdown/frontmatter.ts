@@ -111,10 +111,10 @@ export function parseFrontMatter(raw: string): ParseResult {
 }
 
 /** Keys a second-brain script greps line by line, so they are written one item per line. */
-const BLOCK_LIST_KEYS = new Set(['agents', 'agent_paths', 'artifacts', 'artifact_paths'])
+const BLOCK_LIST_KEYS = new Set(['skills', 'skill_paths', 'domains', 'domain_paths'])
 
-/** Tags in these namespaces are written by filing and replaced on every filing. */
-const MIRRORED_TAG = /^(agent|artifact)\//
+/** Tags in these namespaces belong to the app and are rewritten from the ticks. 1.1 used agent/ and artifact/. */
+export const MIRRORED_TAG = /^(skill|domain|agent|artifact)\//
 
 function applyPatch(doc: Document, patch: FrontMatterPatch): void {
   for (const [key, value] of Object.entries(patch)) {
@@ -168,15 +168,15 @@ export interface Stamp {
   created: string
   tags?: string[]
   title?: string
-  /** Set when filing to a bunch. Replaces bunch, agents, agent_paths, artifacts and artifact_paths wholesale. */
+  /** Set when filing to a bunch. Replaces bunch, skills, skill_paths, domains and domain_paths wholesale. */
   bunch?: string
-  agents?: string[]
-  agentPaths?: string[]
-  artifacts?: string[]
-  artifactPaths?: string[]
+  skills?: string[]
+  skillPaths?: string[]
+  domains?: string[]
+  domainPaths?: string[]
 }
 
-function normaliseTags(value: unknown): string[] {
+export function normaliseTags(value: unknown): string[] {
   if (value === null || value === undefined) return []
   const list = Array.isArray(value) ? value : String(value).split(',')
   const out: string[] = []
@@ -217,10 +217,15 @@ export function stampNote(text: string, stamp: Stamp): string {
     filed: stamp.filed,
     tags: tags.length > 0 ? tags : stripped ? null : undefined,
     bunch: stamp.bunch === undefined ? undefined : stamp.bunch.length > 0 ? stamp.bunch : null,
-    agents: list(stamp.agents),
-    agent_paths: list(stamp.agentPaths),
-    artifacts: list(stamp.artifacts),
-    artifact_paths: list(stamp.artifactPaths),
+    skills: list(stamp.skills),
+    skill_paths: list(stamp.skillPaths),
+    domains: list(stamp.domains),
+    domain_paths: list(stamp.domainPaths),
+    // 1.1 keys go the first time the note is filed again
+    agents: filing ? null : undefined,
+    agent_paths: filing ? null : undefined,
+    artifacts: filing ? null : undefined,
+    artifact_paths: filing ? null : undefined,
     title: stamp.title
   }
 

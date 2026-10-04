@@ -24,7 +24,7 @@ function tileClass(tile: Tile): string {
 function tileTitle(tile: Tile): string {
   const bits = [`${tile.name} - ${tile.memberCount} member${tile.memberCount === 1 ? '' : 's'}`]
   if (tile.dotted) bits.push('this note was last filed here')
-  if (tile.empty) bits.push('add an agent or an artifact first')
+  if (tile.empty) bits.push('add a skill or a domain first')
   if (tile.unavailable) bits.push('raw folder cannot be reached')
   return bits.join(' - ')
 }
@@ -128,7 +128,7 @@ export function Strip({
       <button
         className="tile strip-board"
         onClick={onOpenBoard}
-        title="Team board - your agents and artifacts"
+        title="Team board - your skills and domains"
         aria-label="Team board"
       >
         ⊞
@@ -142,7 +142,7 @@ export function Strip({
       {showCoachmark && (
         <div className="coachmark" style={{ top: coachTop }}>
           <p>
-            Your <strong>Funky Bunch</strong> lives here. Add an agent, add an artifact, then make a bunch.
+            Your <strong>Funky Bunch</strong> lives here. Add a skill, add a domain, then make a bunch.
           </p>
           <button className="btn btn-primary" onClick={onOpenBoard}>
             Open the team board

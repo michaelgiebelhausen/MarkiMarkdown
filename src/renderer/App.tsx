@@ -46,7 +46,7 @@ function nowLocalIso(): string {
 
 type DialogState =
   | { kind: 'member'; existing?: Member; presetKind?: MemberKind; from?: 'board' }
-  | { kind: 'bunch'; existing?: Bunch; preset?: { agentIds: string[]; artifactIds: string[] }; from?: 'board' }
+  | { kind: 'bunch'; existing?: Bunch; preset?: { skillIds: string[]; domainIds: string[] }; from?: 'board' }
   | { kind: 'board' }
   | { kind: 'settings' }
   | { kind: 'help' }
@@ -281,7 +281,7 @@ export default function App() {
     if (!bunch || !settings) return
 
     // Broken YAML makes stampNote a no-op, which would file a note with no id and no
-    // agents. Say so instead of filing something wrong.
+    // skills. Say so instead of filing something wrong.
     if (!frontMatter.ok) {
       pushToast({
         text: 'The properties at the top of this note cannot be read, so it cannot be filed yet. Fix them on the left, or press Repair above the note.',
@@ -312,7 +312,7 @@ export default function App() {
     const created =
       frontMatter.ok && typeof frontMatter.data.created === 'string' ? frontMatter.data.created : nowLocalIso()
 
-    const who = buildStamp(bunch, members, settings.mirrorMembersAsTags)
+    const who = buildStamp(bunch, members, settings.mirrorTicksAsTags)
     const content = stampNote(store.fullText(), {
       id,
       // the plain preset keeps front matter minimal; OKF wants a type on every concept
@@ -321,10 +321,10 @@ export default function App() {
       created,
       tags: who.tags,
       bunch: who.bunch,
-      agents: who.agents,
-      agentPaths: who.agentPaths,
-      artifacts: who.artifacts,
-      artifactPaths: who.artifactPaths
+      skills: who.skills,
+      skillPaths: who.skillPaths,
+      domains: who.domains,
+      domainPaths: who.domainPaths
     })
 
     // Belt and braces: if the stamp did not actually land, do not write anything.
@@ -393,9 +393,9 @@ export default function App() {
     const entry: LedgerEntry = {
       noteId: id,
       bunchId: bunch.id,
-      agentIds: who.agentIds,
-      artifactIds: who.artifactIds,
-      filedAt: nowLocalIso()
+      skillIds: who.skillIds,
+      domainIds: who.domainIds,
+      archivedAt: nowLocalIso()
     }
     const appended = await window.marki.ledger.append(entry)
     if (appended.ok) setLedger(appended.entries)
@@ -592,7 +592,7 @@ export default function App() {
       const next = members.some((m) => m.id === member.id)
         ? members.map((m) => (m.id === member.id ? member : m))
         : [...members, member]
-      const result = await saveSettings({ members: next, seenCoachmark: true })
+      const result = await saveSettings({ members: next, seenWelcome: true })
       if (!result.ok) {
         pushToast({ text: result.message, tone: 'warn' })
         return
@@ -608,8 +608,8 @@ export default function App() {
         members: members.filter((m) => m.id !== id),
         bunches: bunches.map((b) => ({
           ...b,
-          agentIds: b.agentIds.filter((x) => x !== id),
-          artifactIds: b.artifactIds.filter((x) => x !== id)
+          skillIds: b.skillIds.filter((x) => x !== id),
+          domainIds: b.domainIds.filter((x) => x !== id)
         }))
       })
       if (!result.ok) {
@@ -626,7 +626,7 @@ export default function App() {
       const next = bunches.some((b) => b.id === bunch.id)
         ? bunches.map((b) => (b.id === bunch.id ? bunch : b))
         : [...bunches, bunch]
-      const result = await saveSettings({ bunches: next, seenCoachmark: true })
+      const result = await saveSettings({ bunches: next, seenWelcome: true })
       if (!result.ok) {
         pushToast({ text: result.message, tone: 'warn' })
         return
@@ -666,10 +666,10 @@ export default function App() {
   )
 
   const openCell = useCallback(
-    (agentId: string, artifactId: string) => {
-      const matches = bunches.filter((b) => b.agentIds.includes(agentId) && b.artifactIds.includes(artifactId))
+    (skillId: string, domainId: string) => {
+      const matches = bunches.filter((b) => b.skillIds.includes(skillId) && b.domainIds.includes(domainId))
       if (matches.length === 1) setDialog({ kind: 'bunch', existing: matches[0], from: 'board' })
-      else setDialog({ kind: 'bunch', preset: { agentIds: [agentId], artifactIds: [artifactId] }, from: 'board' })
+      else setDialog({ kind: 'bunch', preset: { skillIds: [skillId], domainIds: [domainId] }, from: 'board' })
     },
     [bunches]
   )
@@ -718,7 +718,7 @@ export default function App() {
 
   if (!settings) return <div className="booting">Opening MarkiMarkdown...</div>
 
-  const showCoachmark = !settings.seenCoachmark && members.length === 0 && bunches.length === 0
+  const showCoachmark = !settings.seenWelcome && members.length === 0 && bunches.length === 0
 
   return (
     <div className="app">
@@ -734,7 +734,7 @@ export default function App() {
           setFileWhenReady(true)
         }}
         showCoachmark={showCoachmark}
-        onDismissCoachmark={() => void saveSettings({ seenCoachmark: true })}
+        onDismissCoachmark={() => void saveSettings({ seenWelcome: true })}
       />
 
       <div className="workspace">

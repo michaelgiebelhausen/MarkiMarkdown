@@ -8,7 +8,7 @@ interface Props {
 }
 
 const OKF_TYPES = ['note', 'source', 'concept', 'meeting', 'person', 'project', 'reference']
-const SHOWN_FIRST = ['type', 'title', 'description', 'tags', 'agents', 'resource']
+const SHOWN_FIRST = ['type', 'title', 'description', 'tags', 'skills', 'resource']
 const HIDDEN = new Set(['id', 'created', 'filed'])
 
 export function PropertiesPanel({ raw, onChange, knownTags }: Props) {
@@ -35,7 +35,7 @@ export function PropertiesPanel({ raw, onChange, knownTags }: Props) {
 
   const data = parsed.data
   const tags = normaliseList(data.tags)
-  const agents = normaliseList(data.agents)
+  const skills = normaliseList(data.skills)
   const type = typeof data.type === 'string' ? data.type : ''
   const title = typeof data.title === 'string' ? data.title : ''
 
@@ -56,7 +56,7 @@ export function PropertiesPanel({ raw, onChange, knownTags }: Props) {
             {tag}
           </span>
         ))}
-        {agents.length > 0 && <span className="props-agents">for {agents.join(', ')}</span>}
+        {skills.length > 0 && <span className="props-skills">for {skills.join(', ')}</span>}
         {!type && !title && tags.length === 0 && <span className="props-empty">Properties</span>}
       </button>
 

@@ -11,17 +11,17 @@ interface Props {
   missingMemberIds: string[]
   onAddMember: (kind: MemberKind) => void
   onEditMember: (id: string) => void
-  onCell: (agentId: string, artifactId: string) => void
+  onCell: (skillId: string, domainId: string) => void
   onClose: () => void
 }
 
 export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMember, onEditMember, onCell, onClose }: Props) {
-  const agents = members.filter((m) => m.kind === 'agent')
-  const artifacts = members.filter((m) => m.kind === 'artifact')
+  const skills = members.filter((m) => m.kind === 'skill')
+  const domains = members.filter((m) => m.kind === 'domain')
   const counts = useMemo(() => pairCounts(ledger), [ledger])
 
-  const inABunch = (agentId: string, artifactId: string) =>
-    bunches.some((b) => b.agentIds.includes(agentId) && b.artifactIds.includes(artifactId))
+  const inABunch = (skillId: string, domainId: string) =>
+    bunches.some((b) => b.skillIds.includes(skillId) && b.domainIds.includes(domainId))
 
   const warn = (id: string) =>
     missingMemberIds.includes(id) ? (
@@ -37,11 +37,11 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
       wide
       footer={
         <>
-          <button className="btn btn-quiet" onClick={() => onAddMember('agent')}>
-            Add an agent
+          <button className="btn btn-quiet" onClick={() => onAddMember('skill')}>
+            Add a skill
           </button>
-          <button className="btn btn-quiet" onClick={() => onAddMember('artifact')}>
-            Add an artifact
+          <button className="btn btn-quiet" onClick={() => onAddMember('domain')}>
+            Add a domain
           </button>
           <span className="spacer" />
           <button className="btn btn-primary" onClick={onClose}>
@@ -51,19 +51,19 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
       }
     >
       <p className="dialog-lead">
-        <strong>Agents</strong> across the top are folders that do work. <strong>Artifacts</strong> down the side
-        are folders that hold what the work produces. A number is how many notes were filed to both. Click a
-        square to make or open the bunch that pairs them. Click a name to edit it.
+        <strong>Skills</strong> across the top are folders that do a kind of work. <strong>Domains</strong> down the
+        side are folders that gather everything about one subject. A number is how many notes were filed to both.
+        Click a square to make or open the bunch that pairs them. Click a name to edit it.
       </p>
 
       {members.length === 0 ? (
         <div className="board-empty">
           <p>Nothing here yet. Start with one folder of each kind.</p>
-          <button className="btn btn-primary" onClick={() => onAddMember('agent')}>
-            Add an agent
+          <button className="btn btn-primary" onClick={() => onAddMember('skill')}>
+            Add a skill
           </button>{' '}
-          <button className="btn btn-primary" onClick={() => onAddMember('artifact')}>
-            Add an artifact
+          <button className="btn btn-primary" onClick={() => onAddMember('domain')}>
+            Add a domain
           </button>
         </div>
       ) : (
@@ -72,65 +72,65 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
             <thead>
               <tr>
                 <th className="board-corner" aria-hidden="true" />
-                {agents.map((agent) => (
+                {skills.map((skill) => (
                   <th
-                    key={agent.id}
+                    key={skill.id}
                     scope="col"
                     className="board-agent"
-                    title={agent.path || 'No folder chosen yet'}
+                    title={skill.path || 'No folder chosen yet'}
                     onContextMenu={(event) => {
                       event.preventDefault()
-                      onEditMember(agent.id)
+                      onEditMember(skill.id)
                     }}
                   >
                     <button
                       type="button"
                       className="board-head"
-                      onClick={() => onEditMember(agent.id)}
+                      onClick={() => onEditMember(skill.id)}
                       title="Edit or remove"
                     >
-                      <span aria-hidden="true">{agent.emoji}</span>
-                      <span className="board-name">{agent.name}</span>
+                      <span aria-hidden="true">{skill.emoji}</span>
+                      <span className="board-name">{skill.name}</span>
                     </button>
-                    {warn(agent.id)}
+                    {warn(skill.id)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {artifacts.map((artifact) => (
-                <tr key={artifact.id}>
+              {domains.map((domain) => (
+                <tr key={domain.id}>
                   <th
                     scope="row"
                     className="board-artifact"
-                    title={artifact.path || 'No folder chosen yet'}
+                    title={domain.path || 'No folder chosen yet'}
                     onContextMenu={(event) => {
                       event.preventDefault()
-                      onEditMember(artifact.id)
+                      onEditMember(domain.id)
                     }}
                   >
                     <button
                       type="button"
                       className="board-head"
-                      onClick={() => onEditMember(artifact.id)}
+                      onClick={() => onEditMember(domain.id)}
                       title="Edit or remove"
                     >
-                      <span aria-hidden="true">{artifact.emoji}</span>
-                      <span className="board-name">{artifact.name}</span>
+                      <span aria-hidden="true">{domain.emoji}</span>
+                      <span className="board-name">{domain.name}</span>
                     </button>
-                    {warn(artifact.id)}
+                    {warn(domain.id)}
                   </th>
-                  {agents.map((agent) => {
-                    const n = counts.get(pairKey(agent.id, artifact.id)) ?? 0
+                  {skills.map((skill) => {
+                    const n = counts.get(pairKey(skill.id, domain.id)) ?? 0
                     const classes = ['board-cell']
                     if (n > 0) classes.push('board-cell-hot')
-                    if (inABunch(agent.id, artifact.id)) classes.push('board-cell-bunch')
+                    if (inABunch(skill.id, domain.id)) classes.push('board-cell-bunch')
                     return (
-                      <td key={agent.id}>
+                      <td key={skill.id}>
                         <button
                           className={classes.join(' ')}
-                          aria-label={`${agent.name} and ${artifact.name}: ${n} note${n === 1 ? '' : 's'}`}
-                          onClick={() => onCell(agent.id, artifact.id)}
+                          aria-label={`${skill.name} and ${domain.name}: ${n} note${n === 1 ? '' : 's'}`}
+                          onClick={() => onCell(skill.id, domain.id)}
                         >
                           {n > 0 ? n : '·'}
                         </button>
@@ -141,8 +141,8 @@ export function TeamBoard({ members, bunches, ledger, missingMemberIds, onAddMem
               ))}
             </tbody>
           </table>
-          {agents.length === 0 && <p className="muted">Add an agent to fill in the columns.</p>}
-          {artifacts.length === 0 && <p className="muted">Add an artifact to fill in the rows.</p>}
+          {skills.length === 0 && <p className="muted">Add a skill to fill in the columns.</p>}
+          {domains.length === 0 && <p className="muted">Add a domain to fill in the rows.</p>}
         </div>
       )}
     </Modal>

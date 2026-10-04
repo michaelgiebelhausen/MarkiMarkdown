@@ -58,15 +58,15 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
       <h3 className="section-head">The Funky Bunch</h3>
       <p>
         Down the left edge are your <strong>bunches</strong>. A bunch is a group of{' '}
-        <strong>agents</strong> (folders that do work) and <strong>artifacts</strong> (folders that hold what
-        the work produces), like a group chat. Click the bunch this note is for, then press File.
+        <strong>skills</strong> (folders that do a kind of work) and <strong>domains</strong> (folders that
+        gather one subject), like a group chat. Click the bunch this note is for, then press File.
       </p>
       <p>
-        Filing writes the note once, into that bunch&apos;s <strong>raw</strong> folder, with the agents and
-        artifacts written into the note&apos;s properties so your second brain knows who it is for.
+        Filing writes the note once, into that bunch&apos;s <strong>raw</strong> folder, with the skills and
+        domains written into the note&apos;s properties so your second brain knows who it is for.
       </p>
       <p className="muted">
-        The team board (the grid button on the strip) shows your agents across the top and your artifacts down the
+        The team board (the grid button on the strip) shows your skills across the top and your domains down the
         side, with how many notes have gone to each pair.
       </p>
 

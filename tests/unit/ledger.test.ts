@@ -3,13 +3,13 @@ import { lastBunchFor, pairCounts, pairKey } from '@shared/ledger'
 import type { LedgerEntry } from '@shared/types'
 
 const entries: LedgerEntry[] = [
-  { noteId: 'n1', bunchId: 'b1', agentIds: ['a1', 'a2'], artifactIds: ['x1'], filedAt: '2026-09-13T10:00:00+00:00' },
-  { noteId: 'n2', bunchId: 'b1', agentIds: ['a1'], artifactIds: ['x1', 'x2'], filedAt: '2026-09-13T11:00:00+00:00' },
-  { noteId: 'n1', bunchId: 'b2', agentIds: ['a2'], artifactIds: ['x2'], filedAt: '2026-09-13T12:00:00+00:00' }
+  { noteId: 'n1', bunchId: 'b1', skillIds: ['a1', 'a2'], domainIds: ['x1'], archivedAt: '2026-09-13T10:00:00+00:00' },
+  { noteId: 'n2', bunchId: 'b1', skillIds: ['a1'], domainIds: ['x1', 'x2'], archivedAt: '2026-09-13T11:00:00+00:00' },
+  { noteId: 'n1', bunchId: 'b2', skillIds: ['a2'], domainIds: ['x2'], archivedAt: '2026-09-13T12:00:00+00:00' }
 ]
 
 describe('pairCounts', () => {
-  test('counts how many filings carried both an agent and an artifact', () => {
+  test('counts how many archive copies carried both a skill and a domain', () => {
     const counts = pairCounts(entries)
     expect(counts.get(pairKey('a1', 'x1'))).toBe(2)
     expect(counts.get(pairKey('a2', 'x1'))).toBe(1)
@@ -24,7 +24,7 @@ describe('pairCounts', () => {
 
   test('duplicate ids inside one entry are not double-counted', () => {
     const dup: LedgerEntry[] = [
-      { noteId: 'n', bunchId: 'b', agentIds: ['a', 'a'], artifactIds: ['x', 'x'], filedAt: 't' }
+      { noteId: 'n', bunchId: 'b', skillIds: ['a', 'a'], domainIds: ['x', 'x'], archivedAt: 't' }
     ]
     expect(pairCounts(dup).get(pairKey('a', 'x'))).toBe(1)
   })

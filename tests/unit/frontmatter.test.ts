@@ -214,11 +214,11 @@ describe('stampNote', () => {
     expect(parsed.data.tags).toEqual(['ai'])
   })
 
-  test('writes agents as a block list and omits the key when the list is empty', () => {
-    const withAgents = stampNote('body\n', { ...base, agents: ['librarian'] })
-    expect(withAgents).toContain('agents:\n  - librarian')
-    const without = stampNote('body\n', { ...base, agents: [] })
-    expect(without).not.toContain('agents')
+  test('writes skills as a block list and omits the key when the list is empty', () => {
+    const withSkills = stampNote('body\n', { ...base, skills: ['librarian'] })
+    expect(withSkills).toContain('skills:\n  - librarian')
+    const without = stampNote('body\n', { ...base, skills: [] })
+    expect(without).not.toContain('skills')
   })
 
   test('leaves the body bytes untouched', () => {
@@ -285,10 +285,10 @@ describe('stampNote with a bunch', () => {
   const base = { id: 'X', type: 'note', filed: 'n', created: 'c' }
   const who = {
     bunch: 'thesis',
-    agents: ['study-coach', 'research-assistant'],
-    agentPaths: ['C:/Users/me/agents/study-coach', 'C:/Users/me/agents/research-assistant'],
-    artifacts: ['thesis-chapter-3'],
-    artifactPaths: ['C:/Users/me/artifacts/thesis-chapter-3']
+    skills: ['study-coach', 'research-assistant'],
+    skillPaths: ['C:/Users/me/skills/study-coach', 'C:/Users/me/skills/research-assistant'],
+    domains: ['thesis-chapter-3'],
+    domainPaths: ['C:/Users/me/domains/thesis-chapter-3']
   }
 
   function data(out: string) {
@@ -300,15 +300,15 @@ describe('stampNote with a bunch', () => {
   test('writes five parallel keys as block lists', () => {
     const out = stampNote('body\n', { ...base, ...who })
     expect(out).toContain('bunch: thesis')
-    expect(out).toContain('agents:\n  - study-coach\n  - research-assistant')
-    expect(out).toContain('agent_paths:\n  - C:/Users/me/agents/study-coach')
-    expect(out).toContain('artifacts:\n  - thesis-chapter-3')
-    expect(out).toContain('artifact_paths:\n  - C:/Users/me/artifacts/thesis-chapter-3')
+    expect(out).toContain('skills:\n  - study-coach\n  - research-assistant')
+    expect(out).toContain('skill_paths:\n  - C:/Users/me/skills/study-coach')
+    expect(out).toContain('domains:\n  - thesis-chapter-3')
+    expect(out).toContain('domain_paths:\n  - C:/Users/me/domains/thesis-chapter-3')
     const parsed = data(out)
-    expect(parsed.agents).toEqual(who.agents)
-    expect(parsed.agent_paths).toEqual(who.agentPaths)
-    expect(parsed.artifacts).toEqual(who.artifacts)
-    expect(parsed.artifact_paths).toEqual(who.artifactPaths)
+    expect(parsed.skills).toEqual(who.skills)
+    expect(parsed.skill_paths).toEqual(who.skillPaths)
+    expect(parsed.domains).toEqual(who.domains)
+    expect(parsed.domain_paths).toEqual(who.domainPaths)
     expect(out.endsWith('body\n')).toBe(true)
   })
 
@@ -319,26 +319,30 @@ describe('stampNote with a bunch', () => {
     expect(out).not.toContain('old')
     expect(out).not.toContain('gone')
     expect(out).not.toContain('stale')
+    expect(out).not.toContain('agents:')
+    expect(out).not.toContain('agent_paths:')
+    expect(out).not.toContain('artifacts:')
+    expect(out).not.toContain('artifact_paths:')
     expect(data(out).bunch).toBe('thesis')
   })
 
   test('an empty list removes the key instead of writing []', () => {
-    const src = '---\nbunch: old\nartifacts:\n  - stale\nartifact_paths:\n  - /old/stale\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who, artifacts: [], artifactPaths: [] })
-    expect(out).not.toContain('artifacts')
-    expect(out).not.toContain('artifact_paths')
+    const src = '---\nbunch: old\ndomains:\n  - stale\ndomain_paths:\n  - /old/stale\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who, domains: [], domainPaths: [] })
+    expect(out).not.toContain('domains')
+    expect(out).not.toContain('domain_paths')
     expect(out).not.toContain('[]')
   })
 
-  test('an agent with no folder yet still gets a slot in agent_paths', () => {
-    const out = stampNote('body\n', { ...base, ...who, agents: ['a', 'b'], agentPaths: ['', '/b'] })
-    expect(data(out).agent_paths).toEqual(['', '/b'])
+  test('a skill with no folder yet still gets a slot in skill_paths', () => {
+    const out = stampNote('body\n', { ...base, ...who, skills: ['a', 'b'], skillPaths: ['', '/b'] })
+    expect(data(out).skill_paths).toEqual(['', '/b'])
   })
 
   test('mirrored tags from the last filing are replaced, hand-written tags stay', () => {
-    const src = '---\ntags: [ai, agent/old, artifact/stale]\n---\nbody\n'
-    const out = stampNote(src, { ...base, ...who, tags: ['agent/study-coach', 'artifact/thesis-chapter-3'] })
-    expect(data(out).tags).toEqual(['ai', 'agent/study-coach', 'artifact/thesis-chapter-3'])
+    const src = '---\ntags: [ai, agent/old, artifact/stale, skill/prev, domain/prev]\n---\nbody\n'
+    const out = stampNote(src, { ...base, ...who, tags: ['skill/study-coach', 'domain/thesis-chapter-3'] })
+    expect(data(out).tags).toEqual(['ai', 'skill/study-coach', 'domain/thesis-chapter-3'])
   })
 
   test('a stamp without a bunch leaves mirrored tags alone', () => {

@@ -17,7 +17,7 @@ export function BunchDialog({
 }: {
   existing?: Bunch
   /** Members to tick when starting a bunch from a team board cell. */
-  preset?: { agentIds: string[]; artifactIds: string[] }
+  preset?: { skillIds: string[]; domainIds: string[] }
   members: Member[]
   defaultRawPath?: string
   missingMemberIds: string[]
@@ -28,15 +28,15 @@ export function BunchDialog({
   const [name, setName] = useState(existing?.name ?? '')
   const [emoji, setEmoji] = useState(existing?.emoji ?? BUNCH_EMOJI[0])
   const [rawPath, setRawPath] = useState(existing?.rawPath || defaultRawPath || '')
-  const [agentIds, setAgentIds] = useState<string[]>(existing?.agentIds ?? preset?.agentIds ?? [])
-  const [artifactIds, setArtifactIds] = useState<string[]>(existing?.artifactIds ?? preset?.artifactIds ?? [])
+  const [skillIds, setSkillIds] = useState<string[]>(existing?.skillIds ?? preset?.skillIds ?? [])
+  const [domainIds, setDomainIds] = useState<string[]>(existing?.domainIds ?? preset?.domainIds ?? [])
   const [error, setError] = useState('')
 
-  const agents = members.filter((m) => m.kind === 'agent')
-  const artifacts = members.filter((m) => m.kind === 'artifact')
-  const pickedAgents = agentIds.filter((id) => agents.some((a) => a.id === id))
-  const pickedArtifacts = artifactIds.filter((id) => artifacts.some((a) => a.id === id))
-  const valid = name.trim().length > 0 && rawPath.length > 0 && pickedAgents.length + pickedArtifacts.length > 0
+  const skills = members.filter((m) => m.kind === 'skill')
+  const domains = members.filter((m) => m.kind === 'domain')
+  const pickedSkills = skillIds.filter((id) => skills.some((s) => s.id === id))
+  const pickedDomains = domainIds.filter((id) => domains.some((d) => d.id === id))
+  const valid = name.trim().length > 0 && rawPath.length > 0 && pickedSkills.length + pickedDomains.length > 0
 
   const flip = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
 
@@ -58,8 +58,8 @@ export function BunchDialog({
       name: name.trim(),
       emoji,
       rawPath,
-      agentIds: pickedAgents,
-      artifactIds: pickedArtifacts
+      skillIds: pickedSkills,
+      domainIds: pickedDomains
     })
   }
 
@@ -85,8 +85,8 @@ export function BunchDialog({
       }
     >
       <p className="dialog-lead">
-        A bunch is a group of agents and artifacts, like a group chat. Filing a note to a bunch drops it in the
-        raw folder, stamped with everyone in the group.
+        A bunch is a saved group of skills and domains, like a group chat, plus the raw folder its archive copies
+        go to.
       </p>
       <Field label="Name">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="thesis" />
@@ -107,19 +107,19 @@ export function BunchDialog({
           </button>
         </div>
       </Field>
-      <Field label="Agents" group>
+      <Field label="Skills" group>
         <div className="folder-checks">
-          {agents.length === 0 && <p className="muted">No agents yet. Add one from the team board.</p>}
-          {agents.map((agent) => (
-            <label key={agent.id} className="check">
+          {skills.length === 0 && <p className="muted">No skills yet. Add one from the team board.</p>}
+          {skills.map((skill) => (
+            <label key={skill.id} className="check">
               <input
                 type="checkbox"
-                checked={agentIds.includes(agent.id)}
-                onChange={() => setAgentIds((current) => flip(current, agent.id))}
+                checked={skillIds.includes(skill.id)}
+                onChange={() => setSkillIds((current) => flip(current, skill.id))}
               />
               <span>
-                {agent.emoji} {agent.name}
-                {missingMemberIds.includes(agent.id) && (
+                {skill.emoji} {skill.name}
+                {missingMemberIds.includes(skill.id) && (
                   <span className="board-warn" title="This folder cannot be found">
                     !
                   </span>
@@ -129,19 +129,19 @@ export function BunchDialog({
           ))}
         </div>
       </Field>
-      <Field label="Artifacts" group>
+      <Field label="Domains" group>
         <div className="folder-checks">
-          {artifacts.length === 0 && <p className="muted">No artifacts yet. Add one from the team board.</p>}
-          {artifacts.map((artifact) => (
-            <label key={artifact.id} className="check">
+          {domains.length === 0 && <p className="muted">No domains yet. Add one from the team board.</p>}
+          {domains.map((domain) => (
+            <label key={domain.id} className="check">
               <input
                 type="checkbox"
-                checked={artifactIds.includes(artifact.id)}
-                onChange={() => setArtifactIds((current) => flip(current, artifact.id))}
+                checked={domainIds.includes(domain.id)}
+                onChange={() => setDomainIds((current) => flip(current, domain.id))}
               />
               <span>
-                {artifact.emoji} {artifact.name}
-                {missingMemberIds.includes(artifact.id) && (
+                {domain.emoji} {domain.name}
+                {missingMemberIds.includes(domain.id) && (
                   <span className="board-warn" title="This folder cannot be found">
                     !
                   </span>

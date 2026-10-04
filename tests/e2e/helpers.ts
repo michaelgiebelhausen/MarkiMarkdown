@@ -42,8 +42,8 @@ export async function launch(
   dirs: Dirs,
   options: { settings?: Record<string, unknown>; openFile?: string } = {}
 ): Promise<Harness> {
-  // seenCoachmark true stops the welcome note appearing, keeping tests deterministic
-  const settings = { seenCoachmark: true, autosave: true, members: [], bunches: [], ...options.settings }
+  // seenWelcome true stops the welcome note appearing, keeping tests deterministic
+  const settings = { seenWelcome: true, autosave: true, members: [], bunches: [], ...options.settings }
   writeFileSync(join(dirs.userData, 'settings.json'), JSON.stringify(settings), 'utf8')
 
   const args = ['.', `--user-data-dir=${dirs.userData}`]
@@ -77,24 +77,24 @@ export async function launch(
   }
 }
 
-export function agentMember(id: string, name: string, emoji: string, path: string) {
-  return { id, kind: 'agent', name, emoji, path }
+export function skillMember(id: string, name: string, emoji: string, path: string) {
+  return { id, kind: 'skill', name, emoji, path }
 }
 
-export function artifactMember(id: string, name: string, emoji: string, path: string) {
-  return { id, kind: 'artifact', name, emoji, path }
+export function domainMember(id: string, name: string, emoji: string, path: string) {
+  return { id, kind: 'domain', name, emoji, path }
 }
 
-export function bunch(id: string, name: string, emoji: string, rawPath: string, agentIds: string[], artifactIds: string[]) {
-  return { id, name, emoji, rawPath, agentIds, artifactIds }
+export function bunch(id: string, name: string, emoji: string, rawPath: string, skillIds: string[], domainIds: string[]) {
+  return { id, name, emoji, rawPath, skillIds, domainIds }
 }
 
-/** One agent, one artifact, one bunch called study that files into dirs.raw. */
+/** One skill, one domain, one bunch called study that archives into dirs.raw. */
 export function team(dirs: Dirs) {
   return {
     members: [
-      agentMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
-      artifactMember('x1', 'thesis', '\u{1F4D5}', dirs.artifact)
+      skillMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
+      domainMember('x1', 'thesis', '\u{1F4D5}', dirs.artifact)
     ],
     bunches: [bunch('b1', 'study', '\u{1F465}', dirs.raw, ['a1'], ['x1'])]
   }

@@ -23,7 +23,7 @@ export interface Tile {
   dotted: boolean
   /** The raw folder is set but missing. */
   unavailable: boolean
-  /** No agents and no artifacts resolve. */
+  /** No skills and no domains resolve. */
   empty: boolean
   memberCount: number
 }
@@ -38,8 +38,8 @@ export interface Plan {
 
 export function planFiling(input: SelectionInput): Plan {
   const tiles: Tile[] = input.bunches.map((b) => {
-    const { agents, artifacts } = membersOf(b, input.members)
-    const memberCount = agents.length + artifacts.length
+    const { skills, domains } = membersOf(b, input.members)
+    const memberCount = skills.length + domains.length
     return {
       id: b.id,
       name: b.name,
@@ -57,7 +57,7 @@ export function planFiling(input: SelectionInput): Plan {
 
   const tile = tiles.find((t) => t.id === bunch.id) as Tile
   let blockedReason = ''
-  if (tile.empty) blockedReason = `Add an agent or an artifact to ${bunch.name} first.`
+  if (tile.empty) blockedReason = `Add a skill or a domain to ${bunch.name} first.`
   else if (tile.unavailable) blockedReason = `${bunch.name}'s raw folder cannot be reached right now.`
 
   return {

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch, prepare, team, agentMember, artifactMember, type Harness } from './helpers'
+import { launch, prepare, team, skillMember, domainMember, type Harness } from './helpers'
 
 let h: Harness
 
@@ -18,7 +18,7 @@ async function openWith(extra: Record<string, unknown> = {}) {
   return { harness, dirs }
 }
 
-test('the team board lists agents across the top, artifacts down the side, and counts filings', async () => {
+test('the team board lists skills across the top, domains down the side, and counts filings', async () => {
   const { harness } = await openWith()
   h = harness
 
@@ -61,9 +61,9 @@ test('clicking a square with no bunch starts a new one with both members ticked'
     settings: {
       ...team(dirs),
       members: [
-        agentMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
-        artifactMember('x1', 'thesis', '\u{1F4D5}', dirs.artifact),
-        artifactMember('x2', 'notes', '\u{1F4D3}', dirs.downloads)
+        skillMember('a1', 'librarian', '\u{1F4DA}', dirs.agent),
+        domainMember('x1', 'thesis', '\u{1F4D5}', dirs.artifact),
+        domainMember('x2', 'notes', '\u{1F4D3}', dirs.downloads)
       ],
       defaultRawPath: dirs.raw
     }
@@ -91,7 +91,7 @@ test('clicking a square with no bunch starts a new one with both members ticked'
   expect(h.errors).toEqual([])
 })
 
-test('adding a folder with a CLAUDE.md proposes agent', async () => {
+test('adding a folder with a CLAUDE.md proposes skill', async () => {
   // The folder picker is a native dialog, so this checks the proposal through the IPC directly.
   const { harness, dirs } = await openWith()
   h = harness
@@ -99,11 +99,11 @@ test('adding a folder with a CLAUDE.md proposes agent', async () => {
     (path) => window.marki.members.proposeKind(path).then((r) => (r.ok ? r.kind : 'error')),
     dirs.agent
   )
-  expect(kind).toBe('agent')
+  expect(kind).toBe('skill')
   const other = await h.page.evaluate(
     (path) => window.marki.members.proposeKind(path).then((r) => (r.ok ? r.kind : 'error')),
     dirs.artifact
   )
-  expect(other).toBe('artifact')
+  expect(other).toBe('domain')
   expect(h.errors).toEqual([])
 })

@@ -152,7 +152,7 @@ app.on('activate', () => {
  * ------------------------------------------------------------------ */
 async function ensureWelcomeNote(): Promise<string | undefined> {
   const settings = readSettings()
-  if (settings.seenCoachmark) return undefined
+  if (settings.seenWelcome) return undefined
   try {
     const target = join(app.getPath('documents'), 'Welcome to MarkiMarkdown.md')
     try {
@@ -341,7 +341,7 @@ ipcMain.handle('members:propose-kind', async (_e, path: string) => {
   try {
     return ok({ kind: proposeKind(await fsp.readdir(path)) })
   } catch {
-    return ok({ kind: 'artifact' as const })
+    return ok({ kind: 'domain' as const })
   }
 })
 
@@ -426,13 +426,13 @@ ipcMain.handle('diagnostics:copy', async () => {
   } catch {
     aiDetail = 'detection failed'
   }
-  const agents = settings.members.filter((m) => m.kind === 'agent').length
-  const artifacts = settings.members.filter((m) => m.kind === 'artifact').length
+  const skills = settings.members.filter((m) => m.kind === 'skill').length
+  const domains = settings.members.filter((m) => m.kind === 'domain').length
   const report = [
     `MarkiMarkdown ${app.getVersion()}`,
     `Electron ${process.versions.electron}, Node ${process.versions.node}`,
     `${process.platform} ${process.arch}`,
-    `Agents: ${agents}, Artifacts: ${artifacts}, Bunches: ${settings.bunches.length}`,
+    `Skills: ${skills}, Domains: ${domains}, Bunches: ${settings.bunches.length}`,
     `AI: ${aiDetail}`,
     `Logs: ${log.transports.file.getFile().path}`
   ].join('\n')

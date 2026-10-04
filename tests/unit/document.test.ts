@@ -200,7 +200,7 @@ describe('notifying listeners', () => {
 describe('what the editor holds after filing', () => {
   test('takes on the stamped text, so the next save cannot wipe the stamp', () => {
     store.load(loaded('# Hello\n', 'C:/downloads/notes.md'))
-    const stamped = '---\nid: 01ABC\ntype: note\nagents: [librarian]\n---\n# Hello\n'
+    const stamped = '---\nid: 01ABC\ntype: note\nskills: [librarian]\n---\n# Hello\n'
 
     store.afterFiling(['C:/sb/Inbox/notes.md'], stamped)
 
