@@ -142,12 +142,21 @@ describe('readTicks', () => {
     expect(readTicks('---\ndomains: [cell-biology]\n---\n', roster).domainIds).toEqual(['d9'])
   })
 
-  test('counts names that reach the same member once, keeping the first spelling', () => {
+  test('counts a name that reaches the same member only in another case once, keeping the first', () => {
     const roster: Member[] = [...members, { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }]
-    const r = readTicks('---\nskills: [Study Coach, study-coach]\n---\n', roster)
+    const r = readTicks('---\nskills: [Study Coach, study coach]\n---\n', roster)
     expect(r.skillIds).toEqual(['s9'])
     expect(r.skillNames).toEqual(['Study Coach'])
     expect(r.spellings).toEqual({ s9: 'Study Coach' })
+  })
+
+  test('the closest of several names for one member is its spelling; a different one is kept as unknown', () => {
+    const roster: Member[] = [...members, { id: 's9', kind: 'skill', name: 'study-coach', emoji: '🎓', path: '/me/skills/study-coach' }]
+    const r = readTicks('---\nskills: [Study Coach, study-coach]\n---\n', roster)
+    expect(r.skillIds).toEqual(['s9'])
+    expect(r.spellings).toEqual({ s9: 'study-coach' })
+    expect(r.skillNames).toEqual(['Study Coach', 'study-coach'])
+    expect(r.unknown).toEqual([{ name: 'Study Coach', kind: 'skill' }])
   })
 
   test('keeps unknown names apart unless they differ only in case', () => {
@@ -294,8 +303,9 @@ describe('applyTicks', () => {
   test('keeps names nobody in the roster has, with an empty path', () => {
     const raw = '---\nskills: [writer, ghost]\n---\n'
     const d = data(applyTicks(raw, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts))
-    expect(d.skills).toEqual(['writer', 'editor', 'ghost'])
-    expect(d.skill_paths).toEqual(['C:/me/skills/writer', '/me/skills/editor', ''])
+    // the note's own names keep their order; the new tick comes after them
+    expect(d.skills).toEqual(['writer', 'ghost', 'editor'])
+    expect(d.skill_paths).toEqual(['C:/me/skills/writer', '', '/me/skills/editor'])
   })
 
   test('sets, keeps and removes the bunch name', () => {
@@ -477,8 +487,90 @@ describe('applyTicks', () => {
     ]
     const raw = '---\nskills: [Study Coach]\n---\n'
     const d = data(applyTicks(raw, { skillIds: ['s9', 's2'], domainIds: [] }, roster, opts))
-    expect(d.skills).toEqual(['editor', 'Study Coach'])
-    expect(d.skill_paths).toEqual(['/me/skills/editor', '/me/skills/study-coach'])
+    expect(d.skills).toEqual(['Study Coach', 'editor'])
+    expect(d.skill_paths).toEqual(['/me/skills/study-coach', '/me/skills/editor'])
+  })
+
+  describe("the note's order", () => {
+    test('names already there keep their order, and new ticks follow in roster order', () => {
+      const raw = '---\nskills: [ghost, editor, writer]\n---\n'
+      const d = data(applyTicks(raw, readTicks(raw, members), members, opts))
+      expect(d.skills).toEqual(['ghost', 'editor', 'writer'])
+      expect(d.skill_paths).toEqual(['', '/me/skills/editor', 'C:/me/skills/writer'])
+
+      const roster: Member[] = [
+        { id: 's0', kind: 'skill', name: 'alpha', emoji: '🅰️', path: '/a' },
+        ...members,
+        { id: 's7', kind: 'skill', name: 'omega', emoji: '🔚', path: '/o' }
+      ]
+      const added = data(applyTicks('---\nskills: [editor]\n---\n', { skillIds: ['s7', 's2', 's0'], domainIds: [] }, roster, opts))
+      expect(added.skills).toEqual(['editor', 'alpha', 'omega'])
+    })
+
+    test('reading back gives the same ticks in the same order', () => {
+      const raw = '---\nskills: [editor, ghost, writer]\ndomains: [History, Biology]\n---\n'
+      const before = readTicks(raw, members)
+      const out = applyTicks(raw, before, members, opts)
+      const after = readTicks(out, members)
+      expect(after.skillIds).toEqual(before.skillIds)
+      expect(after.domainIds).toEqual(before.domainIds)
+      expect(after.skillNames).toEqual(['editor', 'ghost', 'writer'])
+      expect(after.domainNames).toEqual(['History', 'Biology'])
+    })
+
+    test('applying the same ticks twice gives identical bytes', () => {
+      const roster: Member[] = [
+        ...members,
+        { id: 'd9', kind: 'domain', name: 'Cell Biology', emoji: '🧪', path: '/d/Cell Biology' }
+      ]
+      const raw =
+        '---\ntitle: Notes\nskills: [editor, ghost, Writer]\ndomains: [cell-biology, History, Cell Biology]\ntags: [mine]\n---\n'
+      const ticks = { skillIds: ['s2', 's1'], domainIds: ['d9', 'd2', 'd1'] }
+      const once = applyTicks(raw, ticks, roster, opts) as string
+      const twice = applyTicks(once, ticks, roster, opts)
+      expect(twice).toBe(once)
+      const thrice = applyTicks(once, readTicks(once, roster), roster, opts)
+      expect(thrice).toBe(once)
+    })
+  })
+
+  describe('a twin removed from the roster', () => {
+    // The note named both twins; then cell-biology (d1) was removed from the roster, so
+    // both names now reach Cell Biology (d2).
+    const roster: Member[] = [
+      ...members.filter((m) => m.kind === 'skill'),
+      { id: 'd2', kind: 'domain', name: 'Cell Biology', emoji: '🧪', path: '/d/Cell Biology' }
+    ]
+    const raw = '---\ndomains: [cell-biology, Cell Biology]\ndomain_paths: [/d/cell-biology, /d/Cell Biology]\n---\n'
+
+    test('the exact name is the spelling, and the other is kept as an unknown name', () => {
+      const r = readTicks(raw, roster)
+      expect(r.domainIds).toEqual(['d2'])
+      expect(r.spellings).toEqual({ d2: 'Cell Biology' })
+      expect(r.domainNames).toEqual(['cell-biology', 'Cell Biology'])
+      expect(r.unknown).toEqual([{ name: 'cell-biology', kind: 'domain' }])
+    })
+
+    test('ticking a skill keeps Cell Biology with its path, and cell-biology with an empty one', () => {
+      const out = applyTicks(raw, { skillIds: ['s1'], domainIds: readTicks(raw, roster).domainIds }, roster, opts)
+      const d = data(out)
+      expect(d.domains).toEqual(['cell-biology', 'Cell Biology'])
+      expect(d.domain_paths).toEqual(['', '/d/Cell Biology'])
+      expect(readTicks(out, roster).domainIds).toEqual(['d2'])
+    })
+
+    test('unticking Cell Biology takes both names, so it stays unticked', () => {
+      const out = applyTicks(raw, { skillIds: [], domainIds: [] }, roster, opts)
+      expect('domains' in data(out)).toBe(false)
+      expect(readTicks(out, roster).domainIds).toEqual([])
+    })
+
+    test('the closest name wins wherever it sits, and a case-only repeat counts once', () => {
+      const r = readTicks('---\ndomains: [cell biology, Cell Biology, CELL BIOLOGY]\n---\n', roster)
+      expect(r.spellings).toEqual({ d2: 'Cell Biology' })
+      expect(r.domainNames).toEqual(['Cell Biology'])
+      expect(r.unknown).toEqual([])
+    })
   })
 
   test('writes the bunch name trimmed', () => {

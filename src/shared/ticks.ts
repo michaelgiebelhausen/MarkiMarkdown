@@ -31,17 +31,23 @@ export interface TickReading extends Ticks {
   /** Why ok is false, in plain words a student can act on. Empty when ok. */
   reason: string
   /**
-   * Every name listed under skills and then 1.1 agents, known or not, as written. Two
-   * names count once only when they reach the same member, or, for names nobody has,
-   * when they differ only in case; the first spelling is kept.
+   * Every name listed under skills and then 1.1 agents, known or not, as written and in
+   * the note's order. Each member the note names appears once, as its spelling (below).
+   * Another name reaching the same member is dropped when it differs from that spelling
+   * only in case, and otherwise kept as an unknown name. Names nobody has count once
+   * when they differ only in case; the first is kept.
    */
   skillNames: string[]
   domainNames: string[]
-  /** Names in the YAML that match nobody of that kind in the roster. */
+  /**
+   * Names in the YAML that match nobody of that kind in the roster, and names that reach
+   * a member the note already names more closely (see skillNames).
+   */
   unknown: UnknownName[]
   /**
-   * For each member the note names, by member id, the spelling the note uses for it
-   * (the first, when it names the member more than once). applyTicks writes this back
+   * For each member the note names, by member id, the spelling the note uses for it:
+   * when several names reach it, the closest (exactly its name, then its name in another
+   * case, then its name key; the first of equally close ones). applyTicks writes this back
    * instead of the roster's name, so ticking something else never respells it.
    */
   spellings: Record<string, string>
@@ -132,15 +138,24 @@ function hasNonScalarItem(value: unknown): boolean {
  * cell-biology twin.
  */
 function findMember(members: Member[], kind: MemberKind, name: string): Member | undefined {
+  return matchMember(members, kind, name)?.member
+}
+
+/**
+ * findMember, and how close the match is: 0 for exactly the member's name, 1 for the name
+ * in another case, 2 for the same name key only.
+ */
+function matchMember(members: Member[], kind: MemberKind, name: string): { member: Member; rank: number } | undefined {
   const ofKind = members.filter((m) => m.kind === kind)
   const wanted = name.trim()
   const lower = wanted.toLowerCase()
   const key = nameKey(wanted)
-  return (
-    ofKind.find((m) => m.name.trim() === wanted) ??
-    ofKind.find((m) => m.name.trim().toLowerCase() === lower) ??
-    ofKind.find((m) => nameKey(m.name) === key)
-  )
+  const exact = ofKind.find((m) => m.name.trim() === wanted)
+  if (exact) return { member: exact, rank: 0 }
+  const cased = ofKind.find((m) => m.name.trim().toLowerCase() === lower)
+  if (cased) return { member: cased, rank: 1 }
+  const keyed = ofKind.find((m) => nameKey(m.name) === key)
+  return keyed ? { member: keyed, rank: 2 } : undefined
 }
 
 /**
@@ -163,25 +178,41 @@ export function readTicks(raw: string | null, members: Member[]): TickReading {
   if (nested !== undefined) return empty(false, `An item under ${nested} is not a plain name.`)
 
   const reading = empty(true)
-  // A name counts once only when it reaches a member already counted, or, when nobody has
-  // it, when it differs from an unknown name already counted only in case. Names that
-  // merely share a name key stay apart, so neither is dropped on the next write.
+  // Every member the note names is represented by the closest of the names that reach it
+  // (exactly its name, then its name in another case, then its name key; the first of
+  // equally close names), wherever that name sits in the list. Another name that reaches
+  // the same member counts once with it when it differs from that spelling only in case;
+  // otherwise it is kept as an unknown name, so nothing the student typed disappears (it
+  // may be the name of a member since removed from the roster). Names nobody has count
+  // once when they differ only in case. Names keep the note's order.
   const resolve = (key: string, alias: string, kind: MemberKind, ids: string[], out: string[]) => {
+    const all = [...names(data[key]), ...names(data[alias])]
+    const matches = all.map((name) => matchMember(members, kind, name))
+    const best = new Map<string, number>()
+    matches.forEach((match, index) => {
+      if (!match) return
+      const previous = best.get(match.member.id)
+      if (previous === undefined || match.rank < (matches[previous]?.rank ?? Infinity)) best.set(match.member.id, index)
+    })
     const unknownSeen: string[] = []
-    for (const name of [...names(data[key]), ...names(data[alias])]) {
-      const member = findMember(members, kind, name)
-      if (member) {
-        if (ids.includes(member.id)) continue
-        ids.push(member.id)
-        reading.spellings[member.id] = name
-      } else {
-        const lower = name.toLowerCase()
-        if (unknownSeen.includes(lower)) continue
-        unknownSeen.push(lower)
-        reading.unknown.push({ name, kind })
+    all.forEach((name, index) => {
+      const match = matches[index]
+      if (match) {
+        const chosen = best.get(match.member.id) ?? index
+        if (chosen === index) {
+          ids.push(match.member.id)
+          reading.spellings[match.member.id] = name
+          out.push(name)
+          return
+        }
+        if ((all[chosen] ?? '').toLowerCase() === name.toLowerCase()) return
       }
+      const lower = name.toLowerCase()
+      if (unknownSeen.includes(lower)) return
+      unknownSeen.push(lower)
+      reading.unknown.push({ name, kind })
       out.push(name)
-    }
+    })
   }
   resolve('skills', 'agents', 'skill', reading.skillIds, reading.skillNames)
   resolve('domains', 'artifacts', 'domain', reading.domainIds, reading.domainNames)
@@ -223,9 +254,11 @@ function slug(name: string): string {
  * the spelling the note uses for it (readTicks' spellings); a newly ticked member is
  * written under the roster's name; paths are always the roster's. Names in the YAML that
  * nobody in the roster has are kept, with an empty path, so a student's typing is never
- * lost. Two names are folded into one only when they reach the same member (or, for
- * unknown names, differ only in case), never because they merely look alike, and the
- * same name is never written twice. The tags list is edited in place, so the student's
+ * lost; so is a second name for a member the note already names more closely, unless
+ * that member is unticked. Two names are folded into one only when they differ only in
+ * case and reach the same member (or nobody), never because they merely look alike, and
+ * the same name is never written twice. Names the note already has keep its order; newly
+ * ticked members follow, in roster order. The tags list is edited in place, so the student's
  * own tags keep their style, comments and quoting; tags written as a comma string are
  * left alone. Returns null, so the caller writes nothing, when the front matter cannot
  * be parsed, holds a mapping where a list belongs (or inside a list of names), repeats a
@@ -239,32 +272,47 @@ export function applyTicks(raw: string | null, ticks: Ticks, members: Member[], 
     const before = readTicks(raw, members)
     if (!before.ok) return null
 
-    const list = (kind: MemberKind, ids: string[]) => {
+    const list = (kind: MemberKind, ids: string[], noteNames: string[]) => {
       const names: string[] = []
       const paths: string[] = []
       // Mirrored tags follow the roster's name, so they stay the same whatever the spelling.
       const tagNames: string[] = []
-      for (const m of members.filter((m) => m.kind === kind && ids.includes(m.id))) {
-        // A member the note already names keeps the note's spelling; a new tick gets the
-        // roster's name. The path is always the roster's.
-        const name = before.spellings[m.id] ?? m.name
+      const push = (name: string, path: string, tag: string) => {
         // Exactly the same name twice would read back as one member, so the first wins.
-        if (names.includes(name)) continue
+        if (names.includes(name)) return
         names.push(name)
-        paths.push(toForwardSlashes(m.path))
-        tagNames.push(m.name)
+        paths.push(path)
+        tagNames.push(tag)
       }
-      // readTicks has already counted these once each, and none of them reaches a member.
-      for (const u of before.unknown.filter((u) => u.kind === kind)) {
-        if (names.includes(u.name)) continue
-        names.push(u.name)
-        paths.push('')
-        tagNames.push(u.name)
+      const ofKind = members.filter((m) => m.kind === kind)
+      const spelledBy = new Map<string, Member>()
+      for (const m of ofKind) {
+        const spelling = before.spellings[m.id]
+        if (spelling !== undefined) spelledBy.set(spelling, m)
+      }
+      // 1. The names the note already has, in its own order. A member it names keeps the
+      // note's spelling, with the roster's path; an unknown name keeps an empty path. A
+      // member unticked now goes, and so does any other name that reaches it, or the
+      // next read would tick it again.
+      for (const name of noteNames) {
+        const member = spelledBy.get(name)
+        if (member) {
+          if (ids.includes(member.id)) push(name, toForwardSlashes(member.path), member.name)
+          continue
+        }
+        const reaches = findMember(members, kind, name)
+        if (reaches && !ids.includes(reaches.id)) continue
+        push(name, '', name)
+      }
+      // 2. Members ticked now that the note did not name yet, in roster order, under the
+      // roster's name.
+      for (const m of ofKind) {
+        if (ids.includes(m.id) && before.spellings[m.id] === undefined) push(m.name, toForwardSlashes(m.path), m.name)
       }
       return { names, paths, tagNames }
     }
-    const skills = list('skill', ticks.skillIds)
-    const domains = list('domain', ticks.domainIds)
+    const skills = list('skill', ticks.skillIds, before.skillNames)
+    const domains = list('domain', ticks.domainIds, before.domainNames)
 
     let tags: ListEdit | undefined
     if (opts.mirrorTags) {
