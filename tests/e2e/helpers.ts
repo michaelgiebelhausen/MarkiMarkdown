@@ -43,7 +43,8 @@ export async function launch(
   options: { settings?: Record<string, unknown>; openFile?: string; keepSettingsFile?: boolean } = {}
 ): Promise<Harness> {
   // seenWelcome true stops the welcome note appearing, keeping tests deterministic
-  const settings = { seenWelcome: true, autosave: true, members: [], bunches: [], ...options.settings }
+  // yamlFolded false keeps the YAML readable in .cm-content for tests that look for it
+  const settings = { seenWelcome: true, autosave: true, yamlFolded: false, members: [], bunches: [], ...options.settings }
   // keepSettingsFile leaves whatever the test put at settings.json, even something unreadable
   if (!options.keepSettingsFile) writeFileSync(join(dirs.userData, 'settings.json'), JSON.stringify(settings), 'utf8')
 

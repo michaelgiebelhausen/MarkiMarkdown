@@ -8,6 +8,7 @@ import { syntaxHighlighting, HighlightStyle, syntaxTree } from '@codemirror/lang
 import { tags } from '@lezer/highlight'
 import type { DocumentStore } from '@renderer/state/document'
 import type { SyncController } from './sync'
+import { foldRange, setYamlFold, yamlFold, type YamlFoldState } from './yamlFold'
 
 const theme = EditorView.theme({
   '&': { height: '100%', fontSize: 'var(--code)', backgroundColor: 'transparent' },
@@ -133,12 +134,18 @@ interface Props {
   sync: SyncController
   onFocusOwner: () => void
   registerCommands: (commands: CodeCommands | null) => void
+  yaml: YamlFoldState
+  onYamlOpen: () => void
 }
 
-export function CodePane({ store, text, sync, onFocusOwner, registerCommands }: Props) {
+export function CodePane({ store, text, sync, onFocusOwner, registerCommands, yaml, onYamlOpen }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const editable = useRef(new Compartment())
+  const yamlRef = useRef(yaml)
+  yamlRef.current = yaml
+  const openRef = useRef(onYamlOpen)
+  openRef.current = onYamlOpen
 
   useEffect(() => {
     if (!host.current) return
@@ -179,6 +186,7 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands }: 
         syntaxHighlighting(highlight),
         noSpellcheckOnSyntax,
         activeRangeField,
+        yamlFold(() => openRef.current()),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'true', 'aria-label': 'Markdown source' }),
         theme,
@@ -189,6 +197,13 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands }: 
           if (update.selectionSet || update.docChanged) {
             const offset = update.state.selection.main.head - sync.bodyStart
             sync.setActive(sync.blockAtOffset(Math.max(0, offset)))
+          }
+          // Moving the cursor into folded YAML (Ctrl+Home, find, arrow keys) opens it, so
+          // nobody types into text they cannot see.
+          if (update.selectionSet && update.transactions.some((tr) => tr.isUserEvent('select'))) {
+            const range = foldRange(update.state)
+            const fold = yamlRef.current
+            if (range && fold.folded && !fold.broken && update.state.selection.main.head <= range.to) openRef.current()
           }
         })
       ]
@@ -283,6 +298,20 @@ export function CodePane({ store, text, sync, onFocusOwner, registerCommands }: 
       scrollIntoView: false
     })
   }, [text])
+
+  // Apply the fold, and keep the cursor out of anything it hides.
+  useEffect(() => {
+    const current = view.current
+    if (!current) return
+    current.dispatch({ effects: setYamlFold.of(yaml) })
+    if (!yaml.folded || yaml.broken) return
+    const range = foldRange(current.state)
+    if (range && current.state.selection.main.head <= range.to) {
+      current.dispatch({ selection: { anchor: Math.min(range.to + 1, current.state.doc.length) } })
+    }
+    // yaml is compared field by field: App rebuilds the object on every tick reading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yaml.folded, yaml.broken, yaml.summary, text])
 
   return <div className="cm-host" ref={host} />
 }

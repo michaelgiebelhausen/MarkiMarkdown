@@ -163,6 +163,29 @@ export default function App() {
 
   const ticks = useMemo(() => readTicks(doc.frontMatterRaw, members), [doc.frontMatterRaw, members])
 
+  /** What the raw pane's YAML fold shows: folded or open, broken or not, and its one line. */
+  const yamlState = useMemo(() => {
+    const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+    return {
+      folded: settings?.yamlFolded ?? true,
+      broken: !ticks.ok,
+      summary: `YAML · ${count(ticks.skillNames.length, 'skill')} · ${count(ticks.domainNames.length, 'domain')} · ${count(ticks.tagCount, 'tag')}`
+    }
+  }, [settings?.yamlFolded, ticks])
+
+  // Optimistic like the pane toggles, so the fold opens in the same frame as the click.
+  const setYamlFolded = useCallback(
+    (folded: boolean) => {
+      const current = settingsRef.current
+      if (!current || current.yamlFolded === folded) return
+      const next = { ...current, yamlFolded: folded }
+      settingsRef.current = next
+      setSettings(next)
+      void saveSettings({ yamlFolded: folded })
+    },
+    [saveSettings]
+  )
+
   /** The bunch the note's YAML names, if it is one of ours. */
   const activeBunch = useMemo(() => {
     const name = ticks.bunch?.toLowerCase()
@@ -699,6 +722,15 @@ export default function App() {
             if (key === 'raw') {
               return (
                 <section key="raw" className="pane pane-code" aria-label="Markdown source">
+                  {doc.frontMatterRaw !== null && ticks.ok && (
+                    <button
+                      type="button"
+                      className="btn btn-quiet btn-tight yaml-toggle"
+                      onClick={() => setYamlFolded(!settings.yamlFolded)}
+                    >
+                      {settings.yamlFolded ? 'View YAML' : 'Hide YAML'}
+                    </button>
+                  )}
                   <CodePane
                     store={store}
                     text={doc.fullText}
@@ -707,6 +739,8 @@ export default function App() {
                     registerCommands={(api) => {
                       codeCommands.current = api
                     }}
+                    yaml={yamlState}
+                    onYamlOpen={() => setYamlFolded(false)}
                   />
                 </section>
               )
