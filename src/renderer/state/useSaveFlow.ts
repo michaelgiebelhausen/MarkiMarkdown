@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentStore } from './document'
 import type { Bunch, LedgerEntry, Member } from '@shared/types'
-import { namedCount, readTicks, type TickReading } from '@shared/ticks'
+import { applyTicks, namedCount, readTicks, type TickReading } from '@shared/ticks'
 import { BLOCK_REASONS, planSave, type SavePlan } from '@shared/archive'
 import { ulid } from 'ulid'
 import { addArchived, mergeFrontMatter, parseFrontMatter, splitFrontMatter } from '@shared/markdown/frontmatter'
@@ -9,7 +9,7 @@ import { baseName, dirName, samePath } from '@shared/paths'
 import { localDate, nowLocalIso } from '@shared/time'
 import { noteIdOf } from '@shared/ledger'
 import type { ToastMessage } from '@renderer/ui/Toast'
-import { suggestName } from './naming'
+import { suggestName, suggestTitle } from './naming'
 
 export interface SaveFlowInput {
   store: DocumentStore
@@ -20,12 +20,13 @@ export interface SaveFlowInput {
   members: Member[]
   activeBunch: Bunch | null
   defaultRawPath: string
+  /** How the ticks are written (as the grid writes them), for the paths an archive regenerates. */
+  mirrorTags: boolean
+  preset: 'okf' | 'basic'
   confirmedFileMoves: boolean
   onConfirmedFileMoves: () => void
   /** The ledger after a successful, saved append. */
   onLedger: (entries: LedgerEntry[]) => void
-  /** The append failed or was not saved to disk: keep the counts on screen and say so. */
-  onLedgerNotSaved: () => void
   pushToast: (toast: Omit<ToastMessage, 'id'>) => void
 }
 
@@ -39,12 +40,16 @@ export interface SaveOutcome {
   /** The note that was saved is still the one open. */
   stillOpen: boolean
   /**
-   * Whether the archive box was ticked and the copy and its ledger entry were made.
-   * 'not-wanted' when nothing was written, since no archive step ran.
+   * Whether an archive copy was asked for and made. 'not-wanted' when the box was not
+   * ticked, when archiving was blocked at the click (the button read Save), or when
+   * nothing was written, since no archive step ran then. 'failed' only when an archive
+   * that was possible at the click didn't go through.
    */
   archived: ArchiveOutcome
   /** Why the archive step didn't finish, when it failed. */
   reason?: string
+  /** The copy was made, but its ledger entry (its count) wasn't saved. Already said. */
+  countNotRecorded?: boolean
 }
 
 export interface SaveFlow {
@@ -77,6 +82,12 @@ export interface SaveFlow {
    * before an open or a close). It went through when `written` and `stillOpen` are both true.
    */
   saveAndWait: () => Promise<SaveOutcome>
+  /**
+   * Waits for whatever is running and saves nothing. Says what the last save it waited for
+   * did, when that was a save of the note still open; null otherwise (nothing was running,
+   * or it was a move, a folder choice or an autosave).
+   */
+  waitForIdle: () => Promise<SaveOutcome | null>
   /** Save As: a new file the student names. Shares the same guard, and queues like Save. */
   saveAs: () => Promise<void>
   /** The quiet autosave. Shares the one-at-a-time guard, so it never races a save or a move. */
@@ -91,7 +102,7 @@ const RAW_FAILED = "The raw folder couldn't be changed."
 const SAVE_STOPPED = 'Another note was opened, so this save stopped. Save again.'
 const MOVE_STOPPED = 'Another note was opened, so the note was not moved. Choose the folder again.'
 const RAW_STOPPED = 'Another note was opened, so the raw folder was not changed.'
-const LEDGER_NOT_SAVED = "The archive copy was made, but the archive counts couldn't be updated."
+const LEDGER_NOT_SAVED = "The archive copy was saved, but its count couldn't be recorded."
 const SOMETHING_WRONG = 'something went wrong.'
 /** The write went through, but by then the student had opened a different note. */
 const savedElsewhere = (name: string) => `Saved ${name}. Another note is open now.`
@@ -114,15 +125,38 @@ interface FollowUp {
   generation: number
 }
 
+/** The job holding the guard, and what it did when it was a save. */
+interface Running {
+  job: Job
+  done: Promise<void>
+  /** The note (by load generation) open when the job started. */
+  generation: number
+  outcome?: SaveOutcome
+}
+
 export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const { store, paths, originalPath, ticks, members, activeBunch, defaultRawPath, pushToast } = input
-  const [archive, setArchive] = useState(false)
-  const [pendingDir, setPendingDir] = useState('')
+  const [archive, setArchiveState] = useState(false)
+  /**
+   * The box as it is right now. A save that waited for another job reads it after that job
+   * unticked it, before any render: reading the render's `archive` there would archive twice.
+   */
+  const archiveRef = useRef(false)
+  const setArchive = useCallback((value: boolean) => {
+    archiveRef.current = value
+    setArchiveState(value)
+  }, [])
+  const [pendingDir, setPendingDirState] = useState('')
+  const pendingDirRef = useRef('')
+  const setPendingDir = (dir: string) => {
+    pendingDirRef.current = dir
+    setPendingDirState(dir)
+  }
   const [rawOverride, setRawOverride] = useState<string | null>(null)
   const [rawMissing, setRawMissing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [settled, setSettled] = useState(0)
-  const running = useRef<{ job: Job; done: Promise<void> } | null>(null)
+  const running = useRef<Running | null>(null)
   /**
    * Save or Save As pressed while another job ran: each runs once that job finishes, at most
    * once per kind and note, and only while the note it was pressed on is still open.
@@ -165,6 +199,22 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   )
 
   /**
+   * What a save reads when it starts, as of the newest render. A save can start from an old
+   * render's closure (one that waited for another job first), so it reads these through
+   * this ref, and the note's own state from the store, never from the closure.
+   */
+  const live = useRef({ rawPath, rawMissing, members, activeBunch, mirrorTags: input.mirrorTags, preset: input.preset })
+  live.current = { rawPath, rawMissing, members, activeBunch, mirrorTags: input.mirrorTags, preset: input.preset }
+
+  /** The folder the working file is in (or will be), read from the store right now. */
+  const currentWorkingDir = () => {
+    const first = store.state.paths[0]
+    if (first) return dirName(first)
+    const source = store.state.originalPath
+    return pendingDirRef.current || (source ? dirName(source) : '')
+  }
+
+  /**
    * One save, move, folder choice or autosave at a time. A move must never run while a
    * save is writing the same file, and a double click must not start a second save over
    * the first. A click that lands while a quiet autosave is writing waits for it, then
@@ -180,7 +230,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     }
     let finish = () => {}
     const done = new Promise<void>((resolve) => (finish = resolve))
-    running.current = { job, done }
+    running.current = { job, done, generation: store.loadGeneration }
     if (job === 'user') setBusy(true)
     let wrote: boolean | void = true
     try {
@@ -212,6 +262,33 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     store.commitUndoGroup()
   }
 
+  /**
+   * Rewrites the ticks the note already has, as the grid would, so skill_paths and
+   * domain_paths line up with the names again (a hand-edited list may have more names than
+   * paths) in both the working file and the copy. One undo step, and only when something
+   * changes. The bunch is left alone. YAML the ticks can't rewrite is left as it is: such a
+   * note can't be archived anyway.
+   */
+  const regenerateTicks = () => {
+    const raw = store.state.frontMatterRaw
+    if (raw === null) return
+    const { members: roster, mirrorTags, preset } = live.current
+    const reading = readTicks(raw, roster)
+    if (!reading.ok) return
+    const next = applyTicks(raw, { skillIds: reading.skillIds, domainIds: reading.domainIds }, roster, {
+      mirrorTags,
+      preset,
+      eol: store.state.eol,
+      newId: ulid(),
+      now: nowLocalIso(),
+      title: suggestTitle(store.state.body)
+    })
+    if (next === null || next === raw) return
+    store.commitUndoGroup()
+    store.setFrontMatter(next, null)
+    store.commitUndoGroup()
+  }
+
   /** A save went through: a later failed autosave of this note is worth reporting again. */
   const savedOk = () => {
     autosaveWarned.current = null
@@ -226,16 +303,33 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const runSave = async (progress: SaveProgress): Promise<SaveOutcome> => {
     // Decided once, at the click: the text written to the working file and copied to the
     // archive, the ticks the ledger records, and whether to archive at all. Typing during
-    // the save, or unticking the box, counts for the next save, not this one.
+    // the save, or unticking the box, counts for the next save, not this one. Everything is
+    // read as it is now (the box and the folders through refs, the note from the store),
+    // never from the render this save was started from, which may be out of date.
     const generation = store.loadGeneration
-    const archiving = archive
+    const { rawPath, rawMissing, members, activeBunch } = live.current
+    const atClick = readTicks(store.state.frontMatterRaw, members)
+    const possible = planSave({
+      yamlOk: atClick.ok,
+      rawPath,
+      rawMissing,
+      tickCount: namedCount(atClick),
+      workingDir: currentWorkingDir()
+    }).canArchive
+    // A ticked box whose archive is blocked (the button reads Save) just saves: the reason
+    // is already on screen under the box, and it is not a failure.
+    const archiving = archiveRef.current && possible
     progress.generation = generation
     progress.archiving = archiving
     const notWritten = (): SaveOutcome => ({ written: false, stillOpen: sameNote(generation), archived: 'not-wanted' })
-    // An archived note needs an id, so the copy and the ledger can be traced back to it.
-    // A 1.1 note or a hand-typed one may have none: give it one now, as its own undo step,
-    // so the working file and the copy both carry it.
-    if (archiving && plan.canArchive) addMissingId()
+    if (archiving) {
+      // The copy carries the same names and paths as the working file, regenerated from
+      // the roster so they line up. An archived note also needs an id, so the copy and the
+      // ledger can be traced back to it; a 1.1 note or a hand-typed one may have none.
+      // Each is its own undo step, so the working file and the copy both carry them.
+      regenerateTicks()
+      addMissingId()
+    }
     const text = store.fullText()
     const split = splitFrontMatter(text)
     const reading = readTicks(split.raw, members)
@@ -248,7 +342,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
       // Opened from a .txt (or .text) file: the Markdown version is a new file named after
       // it, and the original is never touched. An untitled note is named from its heading.
       const source = store.state.originalPath
-      let dir = workingDir
+      let dir = currentWorkingDir()
       if (!dir) {
         const picked = await window.marki.dialogs.pickFolder()
         if (!picked.ok) return notWritten()
@@ -343,34 +437,43 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     // already on screen rather than wiping them.
     const recorded = appended.ok && appended.saved
     if (recorded) input.onLedger(appended.entries)
-    else input.onLedgerNotSaved()
 
-    // The box belongs to whichever note is open now: only untick it for this one.
+    // The box belongs to whichever note is open now: only untick it for this one. The ref
+    // goes at once, so a save that was waiting for this one doesn't archive again.
     if (sameNote(generation)) setArchive(false)
     pushToast({
       text: `Saved and archived to ${baseName(rawPath) || rawPath}.`,
       actionLabel: 'Show',
       onAction: () => void window.marki.shell.showItem(copy.path)
     })
-    return recorded ? { written: true, stillOpen, archived: 'done' } : notArchived(LEDGER_NOT_SAVED)
+    // Every time, not once a session: each copy whose count is missing is worth knowing about.
+    if (!recorded) {
+      pushToast({ text: LEDGER_NOT_SAVED, tone: 'warn', duration: 10000 })
+      return { written: true, stillOpen, archived: 'done', countNotRecorded: true }
+    }
+    return { written: true, stillOpen, archived: 'done' }
   }
 
   /** Runs one save inside the guard (already held) and says what it did. */
   const guardedSave = async (): Promise<SaveOutcome> => {
     const progress: SaveProgress = { written: false, archiving: false, generation: store.loadGeneration }
+    let outcome: SaveOutcome
     try {
-      return await runSave(progress)
+      outcome = await runSave(progress)
     } catch {
       // A rejected IPC call must never leave the student thinking the note was saved,
       // nor thinking it was lost when only the archive step failed.
       pushToast({ text: progress.written ? `Saved, but not archived: ${SOMETHING_WRONG}` : SAVE_FAILED, tone: 'warn' })
-      return {
+      outcome = {
         written: progress.written,
         stillOpen: sameNote(progress.generation),
         archived: progress.written && progress.archiving ? 'failed' : 'not-wanted',
         reason: progress.written && progress.archiving ? SOMETHING_WRONG : undefined
       }
     }
+    // Kept with the job, so a close or an open that waited for it can act on what it did.
+    if (running.current) running.current.outcome = outcome
+    return outcome
   }
 
   /** Remembers a Save or Save As pressed while another job runs, for the note open now. */
@@ -419,8 +522,29 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followUpTurn])
 
+  /** Waits for every job running now (and any that follow at once); the last one waited for. */
+  const settle = async (): Promise<Running | null> => {
+    let waited: Running | null = null
+    while (running.current) {
+      waited = running.current
+      await waited.done
+    }
+    return waited
+  }
+
+  const waitForIdle = async (): Promise<SaveOutcome | null> => {
+    const waited = await settle()
+    return waited?.outcome && sameNote(waited.generation) ? waited.outcome : null
+  }
+
   const saveAndWait = async (): Promise<SaveOutcome> => {
-    while (running.current) await running.current.done
+    const waited = await settle()
+    // The job it waited for already saved this note, and nothing was typed since: that
+    // save is the one asked for. Saving again would only repeat it, and repeat its archive
+    // copy when the box was ticked.
+    if (waited?.outcome && sameNote(waited.generation) && !store.state.dirty) {
+      return { ...waited.outcome, stillOpen: sameNote(waited.generation) }
+    }
     let outcome: SaveOutcome = { written: false, stillOpen: false, archived: 'not-wanted' }
     await exclusive('user', async () => {
       // This save covers a Save already queued for the same note.
@@ -588,10 +712,11 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
   const reset = useCallback(() => {
     // A Save or Save As still queued belonged to the note that was replaced.
     followUps.current = []
-    setPendingDir('')
+    pendingDirRef.current = ''
+    setPendingDirState('')
     setArchive(false)
     setRawOverride(null)
-  }, [])
+  }, [setArchive])
 
   return {
     workingDir,
@@ -607,6 +732,7 @@ export function useSaveFlow(input: SaveFlowInput): SaveFlow {
     chooseRawFolder,
     save,
     saveAndWait,
+    waitForIdle,
     saveAs,
     autosave,
     reset

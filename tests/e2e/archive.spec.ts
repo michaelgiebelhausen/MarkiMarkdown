@@ -288,6 +288,54 @@ test('archiving a note with no id gives it one, in the working file, the copy an
   expect(h.errors).toEqual([])
 })
 
+/** The block list under key, as written. */
+function blockList(text: string, key: string): string[] {
+  const match = new RegExp(`^${key}:\\n((?:  - .*\\n)*)`, 'm').exec(text)
+  return match ? match[1].split('\n').filter((line) => line.length > 0).map((line) => line.slice(4)) : []
+}
+
+test('archiving lines hand-typed names up with their paths, in the working file and the copy', async () => {
+  const { dirs, notePath } = await openNote(
+    '---\nid: n1\nskills: [librarian]\ndomains: [Thesis, History]\ndomain_paths: [/somewhere]\n---\n# Essay\n'
+  )
+  await archiveBox().check()
+  await saveAndArchive().click()
+  await expect(h.page.locator('.toast')).toContainText('Saved and archived', { timeout: 20000 })
+
+  const thesis = dirs.artifact.split(String.fromCharCode(92)).join('/')
+  for (const text of [readFileSync(join(dirs.raw, `essay-${today()}.md`), 'utf8'), readFileSync(notePath, 'utf8')]) {
+    expect(blockList(text, 'domains')).toEqual(['Thesis', 'History'])
+    expect(blockList(text, 'domain_paths')).toEqual([thesis, '""'])
+  }
+  // one undo step takes the rewrite back
+  await menu('undo')
+  await expect(h.page.locator('.cm-content')).toContainText('domains: [Thesis, History]')
+  expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
+})
+
+test('adding a name from its chip fills in its path', async () => {
+  const { dirs } = await openNote('---\ndomains: [thesis, History]\ndomain_paths: [/somewhere]\n---\n# Essay\n')
+  const history = join(dirs.root, 'history')
+  mkdirSync(history)
+  await h.app.evaluate(({ dialog }, dir) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog
+  }, history)
+  await pane().getByRole('button', { name: "History isn't a domain yet. Add it?", exact: true }).click()
+  const dialog = h.page.getByRole('dialog', { name: 'Add a domain' })
+  await dialog.getByRole('button', { name: 'Choose...', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: 'Name' })).toHaveValue('History')
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+
+  const slashes = (p: string) => p.split(String.fromCharCode(92)).join('/')
+  await expect(h.page.locator('.cm-content')).toContainText(`- ${slashes(history)}`)
+  await expect(h.page.locator('.cm-content')).toContainText(`- ${slashes(dirs.artifact)}`)
+  await expect(h.page.locator('.cm-content')).not.toContainText('/somewhere')
+  expect(h.errors).toEqual([])
+  await h.close({ expectUnsaved: true })
+})
+
 test('a hand-typed number id is recorded exactly as written', async () => {
   const { dirs } = await openNote('---\nid: 007\nskills: [librarian]\ndomains: [thesis]\n---\n# Agent\n')
   await archiveBox().check()

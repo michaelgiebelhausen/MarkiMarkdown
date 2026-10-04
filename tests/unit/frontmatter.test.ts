@@ -171,6 +171,18 @@ describe('mergeFrontMatter', () => {
     const out = mergeFrontMatter('---\ntitle: Old\n---\n', { title: 'New' }, '\r\n')
     expect(out).toBe('---\ntitle: New\n---\n')
   })
+
+  test('numbers the note wrote keep their spelling; numbers the app writes are plain', () => {
+    const raw = '---\nid: 007\ncode: 0x1F\nscore: 1.50\nbig: 1e3\nlist: [007, 2]\n---\n'
+    const out = mergeFrontMatter(raw, { count: 5 })
+    expect(out).toBe('---\nid: 007\ncode: 0x1F\nscore: 1.50\nbig: 1e3\nlist: [007, 2]\ncount: 5\n---\n')
+  })
+
+  test('the archive stamp keeps a number id as written', () => {
+    expect(addArchived('---\nid: 007\n---\nBody\n', '2026-10-04T10:00:00-04:00')).toBe(
+      '---\nid: 007\narchived: 2026-10-04T10:00:00-04:00\n---\nBody\n'
+    )
+  })
 })
 
 describe('mergeFrontMatter list edits', () => {

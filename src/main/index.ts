@@ -56,13 +56,18 @@ function safeBounds(): { width: number; height: number; x?: number; y?: number }
 /* ------------------------------------------------------------------ *
  * Never close a window over unsaved changes without asking
  * ------------------------------------------------------------------ */
-/** Windows whose note has unsaved changes (or a save still under way), by window id, with the note's name. */
-const unsaved = new Map<number, string>()
+/**
+ * Windows whose note has unsaved changes or a save still under way, by window id, with the
+ * note's name. `dirty` is false when the note itself is saved and a save (or a move) is
+ * only still running.
+ */
+const unsaved = new Map<number, { name: string; dirty: boolean }>()
 /** Windows whose note was saved after the student chose Save on closing. */
 const closeApproved = new Set<number>()
 /**
- * Windows saving before they close (the student chose Save), and whether a quit is waiting
- * for them. Closing such a window again neither asks again nor starts a second save.
+ * Windows saving (or waiting for a save) before they close (the student chose Save, or Wait
+ * and close), and whether a quit is waiting for them. Closing such a window again neither
+ * asks again nor starts a second save.
  */
 const quitAfterSave = new Map<number, boolean>()
 /** Windows whose page has stopped responding: they can't save, so closing only offers Close. */
@@ -129,11 +134,32 @@ function askToCloseStuck(win: BrowserWindow, name: string): number {
   }
 }
 
-ipcMain.on('window:set-dirty', (event, dirty: unknown, name: unknown) => {
+const WAIT_AND_CLOSE = 0
+
+/** The note is saved, but a save is still running: wait for it and then close, or Cancel. */
+function askToWait(win: BrowserWindow, name: string): number {
+  try {
+    return dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Wait and close', 'Cancel'],
+      defaultId: WAIT_AND_CLOSE,
+      cancelId: 1,
+      message: `A save is still running for ${name}. Wait for it, then close?`
+    })
+  } catch (error) {
+    log.warn('Could not ask about a save still running', error)
+    return 1
+  }
+}
+
+ipcMain.on('window:set-dirty', (event, dirty: unknown, name: unknown, busy: unknown) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win) return
-  if (dirty === true) unsaved.set(win.id, typeof name === 'string' && name.length > 0 ? name : 'this note')
-  else unsaved.delete(win.id)
+  if (dirty === true || busy === true) {
+    unsaved.set(win.id, { name: typeof name === 'string' && name.length > 0 ? name : 'this note', dirty: dirty === true })
+  } else {
+    unsaved.delete(win.id)
+  }
 })
 
 ipcMain.on('window:close-now', (event) => {
@@ -181,7 +207,7 @@ export function createWindow(openPath?: string): BrowserWindow {
    */
   const forgetGonePage = (reason: string) => {
     if (unsaved.has(id) || quitAfterSave.has(id)) {
-      log.error(`A window's page stopped (${reason}) with changes that weren't saved: ${unsaved.get(id) ?? 'this note'}`)
+      log.error(`A window's page stopped (${reason}) with changes that weren't saved: ${unsaved.get(id)?.name ?? 'this note'}`)
     }
     unsaved.delete(id)
     quitAfterSave.delete(id)
@@ -206,7 +232,7 @@ export function createWindow(openPath?: string): BrowserWindow {
     // A page that has stopped responding can't save now: offer only Close or Cancel.
     if (unresponsive.has(id)) {
       if (duringQuit && quitCancelled) return false
-      if (askToCloseStuck(win, note ?? 'this note') === CLOSE_STUCK) return true
+      if (askToCloseStuck(win, note?.name ?? 'this note') === CLOSE_STUCK) return true
       if (duringQuit) {
         quitCancelled = true
         quitHeldUp()
@@ -226,10 +252,27 @@ export function createWindow(openPath?: string): BrowserWindow {
 
     // The student already pressed Cancel on this quit for another window.
     if (duringQuit && quitCancelled) return false
+    const name = note?.name ?? 'this note'
+
+    // The note is saved, but a save (or a move) is still running: closing would cut it
+    // short. Wait and close hands over to the window, which closes once that job has
+    // finished (and stays open, saying why, if it didn't go through). It never saves again.
+    if (note && !note.dirty) {
+      const wait = askToWait(win, name) === WAIT_AND_CLOSE
+      if (duringQuit) {
+        if (!wait) quitCancelled = true
+        quitHeldUp()
+      }
+      if (wait) {
+        quitAfterSave.set(id, duringQuit)
+        win.webContents.send('menu:action', 'wait-then-close')
+      }
+      return false
+    }
 
     // Unsaved changes: ask first. Save hands the save to the window, which closes it again
     // through window:close-now once the note is saved; a failed save leaves it open.
-    const answer = askToSave(win, note ?? 'this note')
+    const answer = askToSave(win, name)
     if (answer === DONT_SAVE) return true
     if (duringQuit) {
       if (answer === CANCEL) quitCancelled = true

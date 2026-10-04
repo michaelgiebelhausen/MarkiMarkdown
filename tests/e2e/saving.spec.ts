@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch, prepare, team, type Harness } from './helpers'
 
@@ -159,23 +159,32 @@ test('Ctrl+S pressed during a save queues exactly one more save', async () => {
   expect(h.errors).toEqual([])
 })
 
-/** Answers the next "Save changes?" questions with this button, and counts how often it was asked. */
+/**
+ * Answers the next "Save changes?" (or "A save is still running") questions with this
+ * button, and counts how often it was asked, keeping each question's message.
+ */
 async function answerSaveChanges(button: number) {
   await h.app.evaluate(({ dialog }, b) => {
-    const g = globalThis as unknown as { asked: number }
+    const g = globalThis as unknown as { asked: number; questions: string[] }
     g.asked = 0
-    dialog.showMessageBox = (async () => {
+    g.questions = []
+    const note = (args: unknown[]) => {
       g.asked += 1
+      g.questions.push((args[args.length - 1] as { message?: string }).message ?? '')
+    }
+    dialog.showMessageBox = (async (...args: unknown[]) => {
+      note(args)
       return { response: b, checkboxChecked: false }
     }) as typeof dialog.showMessageBox
-    dialog.showMessageBoxSync = (() => {
-      g.asked += 1
+    dialog.showMessageBoxSync = ((...args: unknown[]) => {
+      note(args)
       return b
     }) as typeof dialog.showMessageBoxSync
   }, button)
 }
 
 const asked = () => h.app.evaluate(() => (globalThis as unknown as { asked: number }).asked)
+const questions = () => h.app.evaluate(() => (globalThis as unknown as { questions: string[] }).questions)
 
 async function openPath(path: string) {
   await h.app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('file:open-path', p), path)
@@ -393,44 +402,159 @@ test('closing with Save when the archive copy fails keeps the window open and sa
   expect(await asked()).toBe(0)
 })
 
-test('closing while the archive copy is still being written asks first', async () => {
-  const { dirs } = await openNote({ autosave: false })
-  await tickAndArchive()
-  // archive:write writes its copy straight away but does not answer until releaseArchive.
+/**
+ * archive:write writes each copy straight away (essay-held-1.md, essay-held-2.md, ...) but
+ * its first reply waits for releaseArchive. Later calls reply at once.
+ */
+async function holdFirstArchiveReply() {
   await h.app.evaluate(({ ipcMain }) => {
     const fs = process.getBuiltinModule('node:fs') as typeof import('node:fs')
     const path = process.getBuiltinModule('node:path') as typeof import('node:path')
-    const g = globalThis as unknown as { releaseArchive?: () => void }
+    const g = globalThis as unknown as { releaseArchive?: () => void; archiveCalls: number }
     delete g.releaseArchive
+    g.archiveCalls = 0
     ipcMain.removeHandler('archive:write')
     ipcMain.handle('archive:write', (_e, rawDir: string, _name: string, _date: string, text: string) => {
-      const target = path.join(rawDir, 'essay-held.md')
+      g.archiveCalls += 1
+      const target = path.join(rawDir, `essay-held-${g.archiveCalls}.md`)
       fs.writeFileSync(target, text, 'utf8')
+      if (g.archiveCalls > 1) return { ok: true, path: target }
       return new Promise((resolve) => {
         g.releaseArchive = () => resolve({ ok: true, path: target })
       })
     })
   })
-  await menu('save')
+}
+
+async function archiveIsHeld() {
   const held = () => h.app.evaluate(() => typeof (globalThis as unknown as { releaseArchive?: () => void }).releaseArchive)
   await expect.poll(held, { timeout: 10000 }).toBe('function')
+}
+
+const releaseArchive = () => h.app.evaluate(() => (globalThis as unknown as { releaseArchive: () => void }).releaseArchive())
+const archiveCalls = () => h.app.evaluate(() => (globalThis as unknown as { archiveCalls: number }).archiveCalls)
+
+const ledgerEntries = (dirs: { userData: string }) => {
+  const file = join(dirs.userData, 'ledger.json')
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown[]).length : 0
+}
+
+test('closing while the archive copy is still being written asks first', async () => {
+  const { dirs } = await openNote({ autosave: false })
+  await tickAndArchive()
+  await holdFirstArchiveReply()
+  await menu('save')
+  await archiveIsHeld()
   await expect(h.page.locator('.chip-dot')).toHaveCount(0) // the working file is saved; the copy is not finished
   const first = await secondWindow()
   await h.page.waitForTimeout(300)
 
-  await answerSaveChanges(2) // Cancel
+  await answerSaveChanges(1) // Cancel
   await closeWindow(first)
   expect(await asked()).toBe(1)
+  expect(await questions()).toEqual(['A save is still running for essay.md. Wait for it, then close?'])
   expect(await isOpen(first)).toBe(true)
 
-  await h.app.evaluate(() => (globalThis as unknown as { releaseArchive: () => void }).releaseArchive())
+  await releaseArchive()
   await expect(toasts().filter({ hasText: 'Saved and archived to raw.' })).toHaveCount(1, { timeout: 20000 })
-  expect(existsSync(join(dirs.raw, 'essay-held.md'))).toBe(true)
+  expect(existsSync(join(dirs.raw, 'essay-held-1.md'))).toBe(true)
   await h.page.waitForTimeout(300)
   await answerSaveChanges(2)
   await closeWindow(first)
   await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
   expect(await asked()).toBe(0)
+})
+
+test('closing during Save and archive waits for it and archives once', async () => {
+  const { dirs } = await openNote({ autosave: false })
+  await tickAndArchive()
+  await holdFirstArchiveReply()
+  await pane().getByRole('button', { name: 'Save and archive', exact: true }).click()
+  await archiveIsHeld()
+  await expect(h.page.locator('.chip-dot')).toHaveCount(0)
+  const first = await secondWindow()
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(0) // Wait and close
+  await closeWindow(first)
+  expect(await isOpen(first)).toBe(true)
+  await releaseArchive()
+
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(await questions()).toEqual(['A save is still running for essay.md. Wait for it, then close?'])
+  expect(await archiveCalls()).toBe(1)
+  expect(readdirSync(dirs.raw)).toEqual(['essay-held-1.md'])
+  // The window closed only after everything it waited for had finished.
+  expect(ledgerEntries(dirs)).toBe(1)
+})
+
+test('choosing Save first while Save and archive is still running saves the new words without archiving again', async () => {
+  const { dirs, notePath } = await openNote({ autosave: false })
+  const other = join(dirs.downloads, 'other.md')
+  writeFileSync(other, '# Other\n\nSecond note.\n', 'utf8')
+  await tickAndArchive()
+  await holdFirstArchiveReply()
+  await pane().getByRole('button', { name: 'Save and archive', exact: true }).click()
+  await archiveIsHeld()
+  await typeAtEnd(' Typed meanwhile.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+
+  await answerSaveChanges(0) // Save
+  await openPath(other)
+  await h.page.waitForTimeout(300)
+  await releaseArchive()
+
+  await expect(h.page.locator('.pm-content')).toContainText('Second note.', { timeout: 20000 })
+  expect(readFileSync(notePath, 'utf8')).toContain('Typed meanwhile.')
+  expect(await archiveCalls()).toBe(1)
+  expect(readdirSync(dirs.raw)).toEqual(['essay-held-1.md'])
+  expect(ledgerEntries(dirs)).toBe(1)
+  expect(h.errors).toEqual([])
+})
+
+test('an archive whose count is not recorded says so every time, and closing does not wait on it', async () => {
+  const { dirs } = await openNote({ autosave: false })
+  await h.app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('ledger:append')
+    ipcMain.handle('ledger:append', () => ({ ok: true, saved: false, entries: [] }))
+  })
+  const notRecorded = () => toasts().filter({ hasText: "The archive copy was saved, but its count couldn't be recorded." })
+  await tickAndArchive()
+  await pane().getByRole('button', { name: 'Save and archive', exact: true }).click()
+  await expect(notRecorded()).toHaveCount(1, { timeout: 20000 })
+  await pane().getByRole('checkbox', { name: /Archive \/ distribute/ }).check()
+  await pane().getByRole('button', { name: 'Save and archive', exact: true }).click()
+  await expect(notRecorded()).toHaveCount(2, { timeout: 20000 })
+  expect(readdirSync(dirs.raw)).toHaveLength(2)
+
+  // Closing with Save over unsaved words and a ticked box: archived, count not recorded, closed.
+  await pane().getByRole('checkbox', { name: /Archive \/ distribute/ }).check()
+  const first = await secondWindow()
+  await typeAtEnd(' More words.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+  await answerSaveChanges(0) // Save
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(readdirSync(dirs.raw)).toHaveLength(3)
+  expect(await asked()).toBe(1)
+})
+
+test('a ticked box whose archive is blocked just saves, and closing with Save closes', async () => {
+  const { notePath } = await openNote({ autosave: false, defaultRawPath: '' })
+  await pane().getByRole('button', { name: 'librarian and thesis: 0 notes', exact: true }).click()
+  await pane().getByRole('checkbox', { name: /Archive \/ distribute/ }).check()
+  await expect(pane()).toContainText('Choose a raw folder to archive into.')
+  const first = await secondWindow()
+  await typeAtEnd(' Words to keep.')
+  await expect(h.page.locator('.chip-dot')).toHaveCount(1)
+  await h.page.waitForTimeout(300)
+
+  await answerSaveChanges(0) // Save
+  await closeWindow(first)
+  await expect.poll(() => isOpen(first), { timeout: 20000 }).toBe(false)
+  expect(readFileSync(notePath, 'utf8')).toContain('Words to keep.')
+  expect(await asked()).toBe(1)
 })
 
 test('closing again while it saves before closing neither asks again nor saves twice, and a quit waits for it', async () => {

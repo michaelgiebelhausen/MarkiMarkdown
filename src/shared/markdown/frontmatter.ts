@@ -6,7 +6,7 @@
  *  - never drop unknown keys, comments or quoting the student wrote
  *  - never coerce dates into Date objects (that silently rewrites `created: 2026-08-21`)
  */
-import { Document, isAlias, isMap, isScalar, isSeq, parseDocument, type Scalar, type YAMLSeq } from 'yaml'
+import { Document, isAlias, isMap, isScalar, isSeq, parseDocument, type Scalar, type ScalarTag, type Tags, type YAMLSeq } from 'yaml'
 
 export interface SplitResult {
   /** The whole block including both fences and the trailing newline, or null. */
@@ -82,11 +82,34 @@ function looksLikeSettings(raw: string): boolean {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * The schema's number tags, but a number read from the note is written back exactly as the
+ * note spelled it: `id: 007` stays 007 and `0x1F` stays 0x1F, where the parser's own
+ * writer would give 7 and 0x1f. A number set by the app has no spelling, and is written
+ * the usual way.
+ */
+function keepNumberSpelling(tags: Tags): Tags {
+  return tags.map((tag) => {
+    if (typeof tag !== 'object' || tag === null || !('stringify' in tag)) return tag
+    const write = tag.stringify
+    if (typeof write !== 'function' || !/:(int|float)$/.test(tag.tag)) return tag
+    const kept: ScalarTag = {
+      ...(tag as ScalarTag),
+      stringify: (item, ctx, onComment, onChompKeep) =>
+        isScalar(item) && typeof item.value === 'number' && typeof item.source === 'string' && Number(item.source) === item.value
+          ? item.source
+          : write(item, ctx, onComment, onChompKeep)
+    }
+    return kept
+  })
+}
+
 function readDocument(raw: string): Document | null {
   const doc = parseDocument(innerYaml(raw), {
     schema: 'core',
     version: '1.2',
-    uniqueKeys: false
+    uniqueKeys: false,
+    customTags: keepNumberSpelling
   })
   if (doc.errors.length > 0) return null
   return doc

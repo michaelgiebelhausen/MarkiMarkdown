@@ -64,29 +64,26 @@ export default function App() {
 
   /* ---------------- settings and ledger ---------------- */
 
-  /** Each "this is not being saved" warning is shown once per session and stays until dismissed. */
-  const warnedNotSaving = useRef(new Set<'settings' | 'ledger'>())
-  const warnNotSaving = useCallback(
-    (what: 'settings' | 'ledger') => {
-      if (warnedNotSaving.current.has(what)) return
-      warnedNotSaving.current.add(what)
-      pushToast({
-        text:
-          what === 'settings'
-            ? "MarkiMarkdown can't save its settings right now, so changes to your skills, domains and bunches will be lost when you close it. Check that the settings folder isn't locked by another program, then restart."
-            : "MarkiMarkdown can't update its archive counts right now. Your notes and archive copies are safe.",
-        tone: 'warn',
-        duration: 0
-      })
-    },
-    [pushToast]
-  )
+  /**
+   * "Settings are not being saved" is shown once per session and stays until dismissed.
+   * (An archive whose count isn't recorded says so itself, every time.)
+   */
+  const warnedNotSaving = useRef(false)
+  const warnNotSaving = useCallback(() => {
+    if (warnedNotSaving.current) return
+    warnedNotSaving.current = true
+    pushToast({
+      text: "MarkiMarkdown can't save its settings right now, so changes to your skills, domains and bunches will be lost when you close it. Check that the settings folder isn't locked by another program, then restart.",
+      tone: 'warn',
+      duration: 0
+    })
+  }, [pushToast])
 
   useEffect(() => {
     window.marki.settings.read().then((loaded) => {
       setSettings(loaded)
       // Saving was off before anything was changed; say so now, not after the first change.
-      if (!loaded.persisting) warnNotSaving('settings')
+      if (!loaded.persisting) warnNotSaving()
     })
     window.marki.ledger.read().then((result) => {
       if (result.ok) setLedger(result.entries)
@@ -123,7 +120,7 @@ export default function App() {
         pushToast({ text: result.message || failed, tone: 'warn' })
         return result
       }
-      if (!result.persisted) warnNotSaving('settings')
+      if (!result.persisted) warnNotSaving()
       if (ticket === settingsWrites.current) {
         settingsRef.current = result.settings
         setSettings(result.settings)
@@ -195,10 +192,11 @@ export default function App() {
     members,
     activeBunch,
     defaultRawPath: settings?.defaultRawPath ?? '',
+    mirrorTags: settings?.mirrorTicksAsTags ?? false,
+    preset: settings?.frontMatterPreset ?? 'okf',
     confirmedFileMoves: settings?.confirmedFileMoves ?? false,
     onConfirmedFileMoves: () => void saveSettings({ confirmedFileMoves: true }),
     onLedger: setLedger,
-    onLedgerNotSaved: () => warnNotSaving('ledger'),
     pushToast
   })
   // saveFlow is a new object every render; listeners attached once reach the newest one here.
@@ -208,7 +206,7 @@ export default function App() {
   // The window asks before closing over unsaved changes, so it needs to know about them,
   // and about a save, an archive copy or a move still under way, which closing would cut short.
   useEffect(() => {
-    window.marki.windows.setDirty(doc.dirty || saveFlow.busy, doc.fileName)
+    window.marki.windows.setDirty(doc.dirty, doc.fileName, saveFlow.busy)
   }, [doc.dirty, saveFlow.busy, doc.fileName])
 
   /**
@@ -517,6 +515,32 @@ export default function App() {
     pushToast({ text: 'Cleaned up.', actionLabel: 'Undo', onAction: () => store.undo() })
   }, [doc.body, pushToast])
 
+  /**
+   * Closing waited for a save of this note that wrote it: close, unless its archive copy (one
+   * that was possible when Save was pressed) didn't go through, or more was typed meanwhile.
+   * A copy whose count alone wasn't recorded is saved, and has said so, so it closes.
+   */
+  const closeAfterSave = useCallback(
+    (outcome: { archived: 'not-wanted' | 'done' | 'failed' } | null) => {
+      if (outcome?.archived === 'failed') {
+        window.marki.windows.stayOpen()
+        pushToast({
+          text: "Saved, but the archive step didn't finish, so the window stayed open. Close it again to leave anyway.",
+          tone: 'warn',
+          duration: 0
+        })
+        return
+      }
+      if (store.state.dirty) {
+        window.marki.windows.stayOpen()
+        pushToast({ text: 'Saved. You typed more while it was saving, so the window stayed open.', tone: 'warn' })
+        return
+      }
+      window.marki.windows.closeNow()
+    },
+    [pushToast]
+  )
+
   const handleAction = useCallback(
     (action: string) => {
       switch (action) {
@@ -541,21 +565,23 @@ export default function App() {
             window.marki.windows.stayOpen()
             return
           }
-          if (outcome.archived === 'failed') {
+          closeAfterSave(outcome)
+        })()
+        // The note was saved but a save was still running when the window was closed, and
+        // the student chose to wait for it: close once it has finished, without saving again.
+        case 'wait-then-close': return void (async () => {
+          let outcome: Awaited<ReturnType<typeof saveFlow.waitForIdle>>
+          try {
+            outcome = await saveFlow.waitForIdle()
+          } catch {
+            outcome = null
+          }
+          // A save that wrote nothing has already said why; the note is unsaved again then.
+          if (outcome && !outcome.written) {
             window.marki.windows.stayOpen()
-            pushToast({
-              text: "Saved, but the archive step didn't finish, so the window stayed open. Close it again to leave anyway.",
-              tone: 'warn',
-              duration: 0
-            })
             return
           }
-          if (store.state.dirty) {
-            window.marki.windows.stayOpen()
-            pushToast({ text: 'Saved. You typed more while it was saving, so the window stayed open.', tone: 'warn' })
-            return
-          }
-          window.marki.windows.closeNow()
+          closeAfterSave(outcome)
         })()
         case 'undo': return store.undo()
         case 'redo': return store.redo()
@@ -594,7 +620,7 @@ export default function App() {
         default: return
       }
     },
-    [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, togglePaneKey, doc.fileName, doc.paths, pushToast]
+    [openFile, saveFlow, addProperties, tidy, convert, cleanWithAi, togglePaneKey, closeAfterSave, doc.fileName, doc.paths, pushToast]
   )
 
   // saveFlow is a new object every render, so handleAction is too. The menu listener is
@@ -612,7 +638,7 @@ export default function App() {
   // saveSettings reports a failed write; a dialog then stays open so nothing is lost.
 
   const upsertMember = useCallback(
-    async (member: Member) => {
+    async (member: Member, fromUnknownName = false) => {
       const current = settingsRef.current
       if (!current) return
       const list = current.members
@@ -620,9 +646,13 @@ export default function App() {
         ? list.map((m) => (m.id === member.id ? member : m))
         : [...list, member]
       const result = await saveSettings({ members: next })
-      if (result.ok) closeDialog()
+      if (!result.ok) return
+      closeDialog()
+      // A name the note already had is now somebody: rewrite the ticks as they stand, so
+      // its path is filled in beside it.
+      if (fromUnknownName) writeTicks((now) => now)
     },
-    [saveSettings, closeDialog]
+    [saveSettings, closeDialog, writeTicks]
   )
 
   const removeMember = useCallback(
@@ -846,7 +876,7 @@ export default function App() {
           presetKind={dialog.presetKind}
           presetName={dialog.presetName}
           siblings={members}
-          onSave={upsertMember}
+          onSave={(member) => upsertMember(member, dialog.existing === undefined && dialog.presetName !== undefined)}
           onDelete={dialog.existing ? () => void removeMember(dialog.existing!.id) : undefined}
           onClose={closeDialog}
         />

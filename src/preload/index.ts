@@ -79,10 +79,12 @@ const api = {
   windows: {
     create: (): Promise<Result<object>> => ipcRenderer.invoke('window:new'),
     /**
-     * Whether this window's note has unsaved changes (or a save is still under way), and its
-     * name, so closing can ask first.
+     * Whether this window's note has unsaved changes, whether a save (or a move) is still
+     * under way, and the note's name, so closing can ask first: "Save changes?" over unsaved
+     * changes, or whether to wait for a save that is only still running.
      */
-    setDirty: (dirty: boolean, name: string): void => ipcRenderer.send('window:set-dirty', dirty, name),
+    setDirty: (dirty: boolean, name: string, busy = false): void =>
+      ipcRenderer.send('window:set-dirty', dirty, name, busy),
     /** The note was saved after the student chose Save on closing: close for real now. */
     closeNow: (): void => ipcRenderer.send('window:close-now'),
     /**

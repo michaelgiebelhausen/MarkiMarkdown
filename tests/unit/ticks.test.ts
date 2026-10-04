@@ -316,6 +316,16 @@ describe('applyTicks', () => {
     expect(d.tags).toEqual(['keep', 'skill/writer', 'domain/biology'])
   })
 
+  test('re-applying the ticks a note has lines a hand-edited list up with its paths', () => {
+    // What an archive does first: one name was typed in by hand, without a path.
+    const raw = '---\ndomains: [biology, Geology]\ndomain_paths: [/me/domains/biology]\n---\n'
+    const now = readTicks(raw, members)
+    const d = data(applyTicks(raw, { skillIds: now.skillIds, domainIds: now.domainIds }, members, { ...opts, mirrorTags: false }))
+    expect(d.domains).toEqual(['biology', 'Geology'])
+    expect(d.domain_paths).toEqual(['/me/domains/biology', ''])
+    expect('bunch' in d).toBe(false)
+  })
+
   test('keeps names nobody in the roster has, with an empty path', () => {
     const raw = '---\nskills: [writer, ghost]\n---\n'
     const d = data(applyTicks(raw, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts))
