@@ -20,6 +20,9 @@ async function open(note: string) {
 
 async function selectFirstParagraph(harness: Harness) {
   await harness.page.locator('.pm-content p').first().click()
+  // ProseMirror puts its own selection back 20ms after the editor gains focus, which can undo a
+  // key pressed before then. A longer timer set now always fires after that one.
+  await harness.page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)))
   await harness.page.keyboard.press('Home')
   await harness.page.keyboard.press('Shift+End')
 }
