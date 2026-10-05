@@ -337,6 +337,11 @@ test('adding a name from its chip fills in its path', async () => {
   await expect(h.page.locator('.cm-content')).toContainText(`- ${slashes(history)}`)
   await expect(h.page.locator('.cm-content')).toContainText(`- ${slashes(dirs.artifact)}`)
   await expect(h.page.locator('.cm-content')).not.toContainText('/somewhere')
+  // only the path is filled in: the ticks' type, title and created are not added
+  await expect(h.page.locator('.cm-content')).not.toContainText('type:')
+  await expect(h.page.locator('.cm-content')).not.toContainText('created:')
+  await expect(h.page.locator('.cm-content')).not.toContainText('title:')
+  await expect(h.page.locator('.cm-content')).toContainText('domains: [thesis, History]')
   expect(h.errors).toEqual([])
   await h.close({ expectUnsaved: true })
 })

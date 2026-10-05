@@ -24,7 +24,7 @@ import { convertTextToMarkdown, looksLikePlainText } from '@shared/markdown/txtT
 import { tidyMarkdown } from '@shared/markdown/tidy'
 import { archiveCount, noteIdOf } from '@shared/ledger'
 import { nowLocalIso } from '@shared/time'
-import { applyTicks, nameKey, namedCount, readTicks, type TickReading, type Ticks, type UnknownName } from '@shared/ticks'
+import { alignPaths, applyTicks, nameKey, namedCount, readTicks, type TickReading, type Ticks, type UnknownName } from '@shared/ticks'
 import type { Bunch, LedgerEntry, Member, MemberKind, Settings } from '@shared/types'
 
 const store = new DocumentStore()
@@ -659,19 +659,26 @@ export default function App() {
       const result = await saveSettings({ members: next })
       if (!result.ok) return
       closeDialog()
-      // A name the note already had is now somebody: rewrite the ticks as they stand, so
-      // its path is filled in beside it. Renamed (or made the other kind) in the dialog,
-      // the new member is not the note's name, so the YAML has nothing to gain and is
-      // left alone.
+      // A name the note already had is now somebody: fill its path in beside it, and
+      // change nothing else (no type, title or created, no tags). Renamed (or made the
+      // other kind) in the dialog, the new member is not the note's name, so the YAML has
+      // nothing to gain and is left alone.
       if (
         fromUnknownName !== undefined &&
         member.kind === fromUnknownName.kind &&
         nameKey(member.name) === nameKey(fromUnknownName.name)
       ) {
-        writeTicks((now) => now)
+        const raw = store.state.frontMatterRaw
+        const roster = settingsRef.current?.members ?? next
+        const aligned = alignPaths(raw, roster)
+        if (aligned !== null && aligned !== raw) {
+          store.commitUndoGroup()
+          store.setFrontMatter(aligned, null)
+          store.commitUndoGroup()
+        }
       }
     },
-    [saveSettings, closeDialog, writeTicks]
+    [saveSettings, closeDialog]
   )
 
   const removeMember = useCallback(

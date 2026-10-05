@@ -33,5 +33,9 @@ is and adds a dated copy named `<name>-YYYY-MM-DD[-n].md`. So the same note (sam
 folder more than once: dedupe on `id` or `archived:`. Lists in the YAML are block lists, one item per line. The
 first tick adds `id`, `type`, `title` (from the note's first heading) and `created` if they are missing.
 Archiving adds only a missing `id`, so every copy has one. When `skill_paths` or `domain_paths` no longer line
-up with your skills and domains, archiving rewrites just that list, so each name has its path beside it (an
-empty one for a name you have not added yet); everything else in the YAML stays exactly as you wrote it.
+up with your skills and domains, archiving fixes just that list, so each name has its path beside it (an
+empty one for a name you have not added yet). Archiving never adds or removes names, tags or other keys. If the
+path lists already line up, the YAML is left byte for byte as it was. If a path list has to be fixed,
+MarkiMarkdown writes the YAML block out again: every key, value, comment, quote style and `[flow, list]` is
+kept, but spacing and indentation are tidied and a value that ran over several lines is joined onto one line.
+The body of the note is never touched.
