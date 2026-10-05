@@ -95,4 +95,9 @@ ico = struct.pack('<HHH', 0, 1, 1)
 ico += struct.pack('<BBBBHHII', 0, 0, 0, 0, 1, 32, len(png), 22)
 ico += png
 open('build/icon.ico', 'wb').write(ico)
-print('icon.png', len(png), 'bytes; icon.ico', len(ico), 'bytes')
+
+# ICNS wrapping the same PNG as its 512x512 entry (ic09); the Mac build asks for this file
+icns = b'ic09' + struct.pack('>I', 8 + len(png)) + png
+icns = b'icns' + struct.pack('>I', 8 + len(icns)) + icns
+open('build/icon.icns', 'wb').write(icns)
+print('icon.png', len(png), 'bytes; icon.ico', len(ico), 'bytes; icon.icns', len(icns), 'bytes')

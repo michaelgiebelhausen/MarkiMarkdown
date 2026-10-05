@@ -54,8 +54,10 @@ export function SkillDomainGrid(props: Props) {
     props.onEditMember(id)
   }
 
+  // The name alone is the label: a skill stands as a tall pill with its name read bottom-up,
+  // a domain as a wide one. The … and the warning sit beside the pill, outside it.
   const head = (member: Member, on: boolean, toggle: () => void) => (
-    <>
+    <div className="board-headwrap">
       <button
         type="button"
         className="board-head"
@@ -66,14 +68,15 @@ export function SkillDomainGrid(props: Props) {
         onClick={toggle}
         onContextMenu={edit(member.id)}
       >
-        <span aria-hidden="true">{member.emoji}</span>
         <span className="board-name">{member.name}</span>
       </button>
-      <button type="button" className="board-more" aria-label={`Edit ${member.name} ${member.kind}`} onClick={() => props.onEditMember(member.id)}>
-        …
-      </button>
-      {warn(member.id)}
-    </>
+      <span className="board-aside">
+        <button type="button" className="board-more" aria-label={`Edit ${member.name} ${member.kind}`} onClick={() => props.onEditMember(member.id)}>
+          …
+        </button>
+        {warn(member.id)}
+      </span>
+    </div>
   )
 
   return (
@@ -128,7 +131,7 @@ export function SkillDomainGrid(props: Props) {
                           aria-label={`${skill.name} and ${domain.name}: ${n} note${n === 1 ? '' : 's'}`}
                           onClick={() => props.onToggleCell(skill.id, domain.id)}
                         >
-                          {both ? '●' : n > 0 ? n : '·'}
+                          {both ? <span className="board-dot" aria-hidden="true" /> : n > 0 ? n : ''}
                         </button>
                       </td>
                     )

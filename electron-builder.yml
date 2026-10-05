@@ -49,7 +49,7 @@ portable:
   artifactName: MarkiMarkdown-${version}-Windows-Portable.${ext}
 
 mac:
-  icon: build/icon.png
+  icon: build/icon.icns
   category: public.app-category.productivity
   hardenedRuntime: true
   gatekeeperAssess: false

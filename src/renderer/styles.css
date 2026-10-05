@@ -6,6 +6,8 @@
   --line: #e6e5e1;
   --accent: #2f6fed;
   --accent-soft: rgba(47, 111, 237, 0.09);
+  --pill: #f1efe9;
+  --pill-line: #e2dfd6;
   --danger: #b4432b;
   --warn-bg: #fdf6e3;
   --warn-line: #e6d9a8;
@@ -26,6 +28,8 @@
     --line: #33333a;
     --accent: #7aa7ff;
     --accent-soft: rgba(122, 167, 255, 0.14);
+    --pill: #2a2a2e;
+    --pill-line: #3a3a41;
     --danger: #e08b73;
     --warn-bg: #38321f;
     --warn-line: #5d5334;
@@ -221,30 +225,46 @@ button:focus-visible,
 /* ---------------- skill and domain grid ---------------- */
 
 .board-scroll { overflow-x: auto; padding-bottom: 4px; }
-.board { border-collapse: separate; border-spacing: 4px; }
-.board th, .board td { text-align: center; font-size: 12.5px; padding: 4px 6px; border-radius: 6px; font-weight: 500; }
+.board { border-collapse: separate; border-spacing: 6px; }
+.board th, .board td { padding: 0; text-align: center; font-size: 12.5px; font-weight: 500; vertical-align: bottom; }
+.board tbody th, .board td { vertical-align: middle; }
 .board-corner { width: 90px; }
-.board-skill { min-width: 64px; }
 .board-domain { text-align: left; white-space: nowrap; }
-.board-name { display: block; font-size: 11px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.board-domain .board-name { display: inline; margin-left: 4px; max-width: none; }
-.board-head { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
-.board-head:disabled { cursor: default; }
-.board-domain .board-head { flex-direction: row; gap: 4px; }
-.board-cell {
-  width: 100%; min-width: 48px; height: 30px;
-  border: 1px solid var(--line); border-radius: 6px;
-  color: var(--muted); font-variant-numeric: tabular-nums;
+.board-headwrap { display: flex; align-items: center; gap: 2px; }
+.board-skill .board-headwrap { flex-direction: column; }
+/* A pill: the name of a skill or domain, pressed to tick it. */
+.board-head {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 12px; border-radius: 9px;
+  background: var(--pill); border: 1px solid var(--pill-line);
+  color: var(--text); font: inherit; font-weight: 650; letter-spacing: 0.01em;
+  cursor: pointer;
 }
-.board-cell:hover { border-color: var(--accent); color: var(--text); }
-.board-cell-hot { color: var(--text); font-weight: 600; background: var(--accent-soft); }
+.board-head:hover:not(:disabled) { border-color: var(--accent); }
+.board-head:disabled { cursor: default; }
+/* A skill stands up: a tall pill whose name reads from the bottom. */
+.board-skill .board-head { width: 38px; height: 124px; padding: 10px 0; }
+.board-skill .board-name { writing-mode: vertical-rl; transform: rotate(180deg); max-height: 104px; }
+/* A domain lies down and fills its row, so the pills line up. */
+.board-domain .board-headwrap { width: 100%; }
+.board-domain .board-head { flex: 1; justify-content: flex-start; min-width: 0; }
+.board-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.board-aside { display: inline-flex; align-items: center; min-height: 16px; }
+.board-cell {
+  width: 36px; height: 36px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--pill); border: 1px solid var(--pill-line); border-radius: 9px;
+  color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px;
+}
+.board-cell:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.board-cell-hot { font-weight: 600; }
+.board-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); }
 .board-warn { color: var(--danger); font-weight: 700; margin-left: 3px; }
-/* After the board rules, so a ticked square or name wins over a hot one. */
-.board-on { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.board-on .board-name { color: var(--accent); font-weight: 600; }
-.board-cell-on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.board-cell-on:hover { color: #fff; }
+/* After the board rules, so a ticked pill or square wins over a hot one. */
+.board-on .board-head { background: var(--accent); border-color: var(--accent); color: #fff; }
+.board-cell-on { border-color: var(--accent); }
 .board-add { background: none; }
+.board-add .btn { white-space: nowrap; }
 
 /* ---------------- panes ---------------- */
 
