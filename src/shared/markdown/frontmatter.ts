@@ -5,8 +5,10 @@
  *  - never throw: a broken YAML block leaves the bytes alone and reports a line number
  *  - never drop unknown keys, comments or quoting the student wrote
  *  - never coerce dates into Date objects (that silently rewrites `created: 2026-08-21`)
+ *  - never rewrite a line an edit didn't touch: changes are spliced in (yamlSplice.ts)
  */
-import { Document, isAlias, isMap, isScalar, isSeq, parseDocument, type Scalar, type ScalarTag, type Tags, type YAMLSeq } from 'yaml'
+import { Document, isAlias, isMap, isNode, isScalar, isSeq, parseDocument, Scalar, type ScalarTag, type Tags, type YAMLSeq } from 'yaml'
+import { FrontMatterBlock, type PairSpan, type Place, type ReadOptions, type SeqPlanItem } from './yamlSplice'
 
 export interface SplitResult {
   /** The whole block including both fences and the trailing newline, or null. */
@@ -109,13 +111,10 @@ function keepNumberSpelling(tags: Tags): Tags {
   })
 }
 
+const READ_OPTIONS: ReadOptions = { schema: 'core', version: '1.2', uniqueKeys: false, customTags: keepNumberSpelling }
+
 function readDocument(raw: string): Document | null {
-  const doc = parseDocument(innerYaml(raw), {
-    schema: 'core',
-    version: '1.2',
-    uniqueKeys: false,
-    customTags: keepNumberSpelling
-  })
+  const doc = parseDocument(innerYaml(raw), READ_OPTIONS)
   if (doc.errors.length > 0) return null
   return doc
 }
@@ -220,9 +219,11 @@ function isListRename(value: unknown): value is ListRename {
   return typeof (value as Partial<ListRename>).rename === 'function'
 }
 
-function applyListRename(doc: Document, key: string, edit: ListRename): void {
-  const node = doc.get(key, true)
-  if (!isSeq(node)) return
+/**
+ * What a ListRename does to each item of a list: null leaves it as it is, a string is its
+ * new text, false drops it (its new text is already taken). Null when nothing is renamed.
+ */
+function renameChoice(node: YAMLSeq, edit: ListRename): (string | null | false)[] | null {
   const text = (item: unknown): string | null => (isScalar(item) && typeof item.value === 'string' ? item.value : null)
   const renamed = node.items.map((item) => {
     const value = text(item)
@@ -230,16 +231,38 @@ function applyListRename(doc: Document, key: string, edit: ListRename): void {
     const to = edit.rename(value)
     return to !== null && to !== value ? to : null
   })
-  if (renamed.every((to) => to === null)) return
+  if (renamed.every((to) => to === null)) return null
   const taken = new Set(node.items.filter((_, i) => renamed[i] === null).map(text))
-  node.items = node.items.filter((item, i) => {
-    const to = renamed[i]
-    if (to === null || to === undefined) return true
+  return renamed.map((to) => {
+    if (to === null) return null
     if (taken.has(to)) return false
     taken.add(to)
-    ;(item as Scalar).value = to
-    return true
+    return to
   })
+}
+
+function applyListRename(doc: Document, key: string, edit: ListRename): void {
+  const node = doc.get(key, true)
+  if (!isSeq(node)) return
+  const choice = renameChoice(node, edit)
+  if (choice === null) return
+  node.items = node.items.filter((item, i) => {
+    const to = choice[i]
+    if (typeof to === 'string') (item as Scalar).value = to
+    return to !== false
+  })
+}
+
+/** Which items of a list a ListEdit keeps, and the text of each item it adds. */
+function listEditChoice(node: YAMLSeq, edit: ListEdit): { keep: boolean[]; added: string[] } {
+  const text = (item: unknown): string | null => (isScalar(item) ? String(item.value) : null)
+  const keep = node.items.map((item) => {
+    const value = text(item)
+    return !(value !== null && edit.removeMatching.test(value) && !edit.append.includes(value))
+  })
+  const present = node.items.filter((_, i) => keep[i]).map(text)
+  const added = edit.append.filter((tag, i) => !present.includes(tag) && edit.append.indexOf(tag) === i)
+  return { keep, added }
 }
 
 /** `key:` with nothing after it: no comment, anchor or explicit tag that a rewrite would lose. */
@@ -265,20 +288,13 @@ function applyListEdit(doc: Document, key: string, edit: ListEdit): void {
   }
   const node = doc.get(key, true)
   if (!isSeq(node)) return
-  const text = (item: unknown): string | null => (isScalar(item) ? String(item.value) : null)
-  const removed = node.items.filter((item) => {
-    const value = text(item)
-    return value !== null && edit.removeMatching.test(value) && !edit.append.includes(value)
-  })
-  const kept = node.items.filter((item) => !removed.includes(item))
-  const present = kept.map(text)
-  const added = edit.append.filter((tag, i) => !present.includes(tag) && edit.append.indexOf(tag) === i)
-  if (removed.length === 0 && added.length === 0) return
-  if (kept.length === 0 && added.length === 0) {
+  const { keep, added } = listEditChoice(node, edit)
+  if (keep.every(Boolean) && added.length === 0) return
+  if (!keep.some(Boolean) && added.length === 0) {
     doc.delete(key)
     return
   }
-  node.items = kept
+  node.items = node.items.filter((_, i) => keep[i])
   for (const tag of added) node.items.push(doc.createNode(tag))
 }
 
@@ -323,6 +339,8 @@ function serialise(doc: Document, eol: '\n' | '\r\n'): string {
 /**
  * Applies a patch to a raw front matter block, or builds a new block when raw is null.
  * The new block uses eol (default "\n"); an existing block keeps its own line ending.
+ * An existing block is edited in place: only the lines of the keys the patch changes are
+ * written, and every other line comes back byte for byte.
  */
 export function mergeFrontMatter(raw: string | null, patch: FrontMatterPatch, eol?: '\n' | '\r\n'): string {
   if (raw === null) {
@@ -330,11 +348,230 @@ export function mergeFrontMatter(raw: string | null, patch: FrontMatterPatch, eo
     applyPatch(doc, patch)
     return serialise(doc, eol ?? '\n')
   }
-  const doc = readDocument(raw)
-  if (!doc) return raw
-  if (doc.contents === null) doc.contents = doc.createNode({}) as Document["contents"]
+  if (!readDocument(raw)) return raw
+  return writeBack(raw, patch)
+}
+
+/**
+ * The patched block, spliced when that can be done safely. The whole-block writer is
+ * the reference for what a patch means: a splice whose YAML does not read back as the
+ * same data as the rewrite (which should never happen) is thrown away for the rewrite.
+ * single names a key that must end up written once, whatever copies the block has.
+ */
+function writeBack(raw: string, patch: FrontMatterPatch, single?: string): string {
+  const whole = rewriteWhole(raw, patch, single)
+  const spliced = splice(raw, patch, single)
+  return spliced !== null && sameData(spliced, whole) ? spliced : whole
+}
+
+/** Parses the block, patches the Document and writes every line again. The caller has checked the YAML reads. */
+function rewriteWhole(raw: string, patch: FrontMatterPatch, single?: string): string {
+  const doc = readDocument(raw) as Document
+  if (doc.contents === null) doc.contents = doc.createNode({}) as Document['contents']
+  // Duplicate keys are allowed when reading, and set() only replaces the first one.
+  if (single !== undefined && isMap(doc.contents)) {
+    doc.contents.items = doc.contents.items.filter((pair) => !(isScalar(pair.key) && pair.key.value === single))
+  }
   applyPatch(doc, patch)
   return serialise(doc, detectEol(raw))
+}
+
+function sameData(a: string, b: string): boolean {
+  const left = parseFrontMatter(a)
+  const right = parseFrontMatter(b)
+  return left.ok && right.ok && sameValue(left.data, right.data)
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => sameValue(v, b[i]))
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length && keys.every((k) => Object.hasOwn(right, k) && sameValue(left[k], right[k]))
+}
+
+/**
+ * The patch applied as text edits, with the same meaning applyPatch gives it: a value
+ * that changes is written over the old one (its key, spacing and comment stay when both
+ * fit on the key's line), a list is edited item by item, a removed key loses its lines,
+ * a new key goes after its related key (skill_paths after skills) or at the end. A value
+ * that would not change is not written at all. Null when the block can't be spliced.
+ */
+function splice(raw: string, patch: FrontMatterPatch, single?: string): string | null {
+  try {
+    const block = FrontMatterBlock.open(raw, READ_OPTIONS)
+    if (!block) return null
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) continue
+      const [span, ...copies] = block.spans(key)
+      if (key === single) for (const copy of copies) block.remove(copy)
+      if (value === null) {
+        if (span) block.remove(span)
+      } else if (isListEdit(value)) spliceListEdit(block, key, span, value)
+      else if (isListRename(value)) spliceListRename(block, span, value)
+      else if (Array.isArray(value)) spliceList(block, key, span, value)
+      else spliceValue(block, key, span, value)
+    }
+    return block.result()
+  } catch {
+    // Writing a pair on its own can fail where the whole block would not (an alias whose
+    // anchor is on another key); the whole-block writer then does the job.
+    return null
+  }
+}
+
+/** A path list goes right after its names (skill_paths after skills), names right before their paths. */
+function placeFor(block: FrontMatterBlock, key: string): Place {
+  const paths = /^(.+)_paths$/.exec(key)
+  const names = paths ? block.span(`${paths[1]}s`) : undefined
+  if (names) return { after: names }
+  const plural = /^(.+)s$/.exec(key)
+  const pathList = plural ? block.span(`${plural[1]}_paths`) : undefined
+  return pathList ? { before: pathList } : {}
+}
+
+/** The list a span's value becomes when it has to be written afresh. */
+function listWith(node: YAMLSeq, items: unknown[]): YAMLSeq {
+  const copy = node.clone() as YAMLSeq
+  copy.items = items
+  return copy
+}
+
+function spliceListEdit(block: FrontMatterBlock, key: string, span: PairSpan | undefined, edit: ListEdit): void {
+  const node = span?.pair.value
+  if (!span || isBareEmpty(node)) {
+    if (edit.append.length === 0) return
+    const seq = block.doc.createNode(edit.append) as YAMLSeq
+    seq.flow = false
+    if (span) block.replace(span, seq, block.listStyle())
+    else block.insert(key, seq, placeFor(block, key), block.listStyle())
+    return
+  }
+  if (!isSeq(node)) return
+  const { keep, added } = listEditChoice(node, edit)
+  if (keep.every(Boolean) && added.length === 0) return
+  if (!keep.some(Boolean) && added.length === 0) {
+    block.remove(span)
+    return
+  }
+  const fresh = added.map((tag) => block.doc.createNode(tag))
+  const plan: SeqPlanItem[] = [
+    ...node.items.flatMap((_, old) => (keep[old] ? [{ old }] : [])),
+    ...fresh.map((add) => ({ add }))
+  ]
+  if (!block.editSeq(span, plan)) {
+    block.replace(span, listWith(node, [...node.items.filter((_, i) => keep[i]), ...fresh]), block.listStyle(span))
+  }
+}
+
+function spliceListRename(block: FrontMatterBlock, span: PairSpan | undefined, edit: ListRename): void {
+  const node = span?.pair.value
+  if (!span || !isSeq(node)) return
+  const choice = renameChoice(node, edit)
+  if (choice === null) return
+  const plan: SeqPlanItem[] = []
+  const items: unknown[] = []
+  node.items.forEach((item, old) => {
+    const to = choice[old]
+    if (to === false) return
+    if (to === null) {
+      plan.push({ old })
+      items.push(item)
+      return
+    }
+    const value = (item as Scalar).clone() as Scalar
+    value.value = to
+    plan.push({ old, value })
+    items.push(value)
+  })
+  if (!block.editSeq(span, plan)) block.replace(span, listWith(node, items), block.listStyle(span))
+}
+
+/**
+ * How a list becomes another, item by item: the longest run of items both have stays,
+ * the rest of the old items go, and the new ones are added where they stand. Null when
+ * the list would not change.
+ */
+function diffItems(block: FrontMatterBlock, items: unknown[], want: unknown[]): SeqPlanItem[] | null {
+  const have = items.map((item) => (isScalar(item) ? item.value : Symbol('not a scalar')))
+  const n = have.length
+  const m = want.length
+  const common: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      common[i][j] = Object.is(have[i], want[j]) ? common[i + 1][j + 1] + 1 : Math.max(common[i + 1][j], common[i][j + 1])
+    }
+  }
+  if (common[0][0] === n && n === m) return null
+  const plan: SeqPlanItem[] = []
+  let i = 0
+  let j = 0
+  while (i < n || j < m) {
+    if (i < n && j < m && Object.is(have[i], want[j])) {
+      plan.push({ old: i })
+      i++
+      j++
+    } else if (j < m && (i === n || common[i][j + 1] >= common[i + 1][j])) {
+      plan.push({ add: block.doc.createNode(want[j]) })
+      j++
+    } else {
+      i++
+    }
+  }
+  return plan
+}
+
+function spliceList(block: FrontMatterBlock, key: string, span: PairSpan | undefined, value: unknown[]): void {
+  const fresh = block.doc.createNode(value) as YAMLSeq
+  fresh.flow = !BLOCK_LIST_KEYS.has(key)
+  if (!span) {
+    block.insert(key, fresh, placeFor(block, key), block.listStyle())
+    return
+  }
+  const node = span.pair.value
+  const style = block.listStyle(span)
+  // A list the student wrote keeps its style, except that the keys a script greps line by
+  // line are always block lists.
+  const plain = value.every((v) => v === null || typeof v !== 'object')
+  if (!isSeq(node) || (node.flow && !fresh.flow) || !plain) {
+    block.replace(span, fresh, style)
+    return
+  }
+  const plan = diffItems(block, node.items, value)
+  if (plan === null) return
+  // A block list with no items would read as nothing at all, not as an empty list.
+  if ((plan.length === 0 && !node.flow) || !block.editSeq(span, plan)) block.replace(span, fresh, style)
+}
+
+/** The node applyPatch would write for a value that is not a list. */
+function newValue(block: FrontMatterBlock, old: unknown, value: unknown): unknown {
+  if (typeof value === 'string') return block.doc.createNode(value)
+  if (isNode(value)) return value
+  if (isScalar(old) && (value === null || typeof value !== 'object')) {
+    const copy = old.clone() as Scalar
+    copy.value = value
+    return copy
+  }
+  return block.doc.createNode(value)
+}
+
+function spliceValue(block: FrontMatterBlock, key: string, span: PairSpan | undefined, value: unknown): void {
+  const old = span?.pair.value
+  const next = newValue(block, old, value)
+  if (!span) {
+    block.insert(key, next, placeFor(block, key))
+    return
+  }
+  if (isScalar(old) && isScalar(next) && Object.is(old.value, next.value)) return
+  // New text keeps the quotes the student chose for the old text.
+  if (isScalar(old) && isScalar(next) && typeof old.value === 'string' && typeof next.value === 'string') {
+    if (old.type === Scalar.QUOTE_DOUBLE || old.type === Scalar.QUOTE_SINGLE) next.type = old.type
+  }
+  if (!block.setInPlace(span, next)) block.replace(span, next)
 }
 
 export function normaliseTags(value: unknown): string[] {
@@ -355,18 +592,7 @@ export function normaliseTags(value: unknown): string[] {
 export function addArchived(text: string, archivedAt: string): string | null {
   const { raw, body } = splitFrontMatter(text)
   if (raw === null) return mergeFrontMatter(null, { archived: archivedAt }) + body
-  if (!parseFrontMatter(raw).ok) return null
-  const doc = readDocument(raw)
-  if (!doc) return null
-  if (doc.contents === null) doc.contents = doc.createNode({}) as Document['contents']
-  // Duplicate keys are allowed when reading, and set() only replaces the first one, so a
-  // copy archived from an archive could otherwise carry two stamps. Drop them all first.
-  if (isMap(doc.contents)) {
-    doc.contents.items = doc.contents.items.filter((pair) => {
-      const key = isScalar(pair.key) ? pair.key.value : pair.key
-      return key !== 'archived'
-    })
-  }
-  applyPatch(doc, { archived: archivedAt })
-  return serialise(doc, detectEol(raw)) + body
+  if (!parseFrontMatter(raw).ok || !readDocument(raw)) return null
+  // A copy archived from an archive could otherwise carry two stamps.
+  return writeBack(raw, { archived: archivedAt }, 'archived') + body
 }

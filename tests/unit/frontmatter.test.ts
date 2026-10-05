@@ -373,3 +373,140 @@ describe('addArchived', () => {
     expect(addArchived('---\ntitle: a: b\n---\nx\n', 'now')).toBeNull()
   })
 })
+
+describe('mergeFrontMatter leaves every line it does not change byte for byte', () => {
+  /** Front matter as a student types it: odd spacing, 4-space lists, a folded value, comments. */
+  const HAND = [
+    '---',
+    'title:    My  Notes   # working title',
+    'created: 2026-08-21',
+    'id: 007',
+    'description: >',
+    '  A folded description',
+    '  over two lines.',
+    '',
+    'tags:',
+    '    - "exam-prep"   # mine',
+    '    - skill/old',
+    '    - biology',
+    '# skills below',
+    'skills:',
+    '    - writer',
+    '? odd key',
+    ': odd value',
+    'course:',
+    '    name: Bio 101',
+    '    code:   B-101',
+    '---',
+    ''
+  ].join('\n')
+  const tagEdit = (append: string[]) => ({ tags: { removeMatching: MIRRORED_TAG, append } })
+
+  test('a changed value replaces only the value, keeping the spacing and comment around it', () => {
+    expect(mergeFrontMatter(HAND, { title: 'New: draft' })).toBe(HAND.replace('My  Notes', '"New: draft"'))
+  })
+
+  test('the same holds with CRLF line endings', () => {
+    const crlf = HAND.replace(/\n/g, '\r\n')
+    expect(mergeFrontMatter(crlf, { title: 'Week 3' })).toBe(crlf.replace('My  Notes', 'Week 3'))
+    expect(mergeFrontMatter(crlf, tagEdit(['skill/writer']))).toBe(
+      crlf.replace('    - skill/old\r\n    - biology\r\n', '    - biology\r\n    - skill/writer\r\n')
+    )
+  })
+
+  test('a folded value that changes is replaced by its own lines, and the blank line after it stays', () => {
+    expect(mergeFrontMatter(HAND, { description: 'Short.' })).toBe(
+      HAND.replace('description: >\n  A folded description\n  over two lines.\n', 'description: Short.\n')
+    )
+  })
+
+  test('removing a key removes exactly its lines', () => {
+    expect(mergeFrontMatter(HAND, { course: null })).toBe(HAND.replace('course:\n    name: Bio 101\n    code:   B-101\n', ''))
+    expect(mergeFrontMatter(HAND, { 'odd key': null })).toBe(HAND.replace('? odd key\n: odd value\n', ''))
+  })
+
+  test('a tag edit touches only the tags it removes and adds, in the list’s own indentation', () => {
+    expect(mergeFrontMatter(HAND, tagEdit(['skill/writer', 'domain/biology']))).toBe(
+      HAND.replace('    - skill/old\n    - biology\n', '    - biology\n    - skill/writer\n    - domain/biology\n')
+    )
+  })
+
+  test('a list set from the properties panel changes only the items that differ', () => {
+    expect(mergeFrontMatter(HAND, { tags: ['exam-prep', 'biology', 'week-3'] })).toBe(
+      HAND.replace('    - skill/old\n    - biology\n', '    - biology\n    - week-3\n')
+    )
+    expect(mergeFrontMatter(HAND, { tags: ['exam-prep', 'skill/old', 'biology'] })).toBe(HAND)
+  })
+
+  test('emptying a block list writes an empty list, not an empty value', () => {
+    expect(mergeFrontMatter(HAND, { tags: [] })).toBe(
+      HAND.replace('tags:\n    - "exam-prep"   # mine\n    - skill/old\n    - biology\n', 'tags: []\n')
+    )
+  })
+
+  test('a flow list keeps its own spacing and separators', () => {
+    expect(mergeFrontMatter('---\ntags: [ a,  skill/old ,c ]\n---\n', tagEdit(['skill/x']))).toBe(
+      '---\ntags: [ a,  c,  skill/x ]\n---\n'
+    )
+    expect(mergeFrontMatter('---\ntags: [a,b,c] # mine\n---\n', { tags: ['a', 'c', 'd'] })).toBe('---\ntags: [a,c,d] # mine\n---\n')
+  })
+
+  test('a flow list written over several lines grows in the block’s line ending', () => {
+    expect(mergeFrontMatter('---\r\ntags: [\r\n  a,\r\n  b\r\n]\r\n---\r\n', { tags: ['z', 'a', 'b', 'c'] })).toBe(
+      '---\r\ntags: [\r\n  z,\r\n  a,\r\n  b,\r\n  c\r\n]\r\n---\r\n'
+    )
+  })
+
+  test('a path list goes in right after its names, indented like the block’s other lists', () => {
+    expect(mergeFrontMatter(HAND, { skills: ['writer', 'editor'], skill_paths: ['/w', '/e'] })).toBe(
+      HAND.replace('    - writer\n', '    - writer\n    - editor\nskill_paths:\n    - /w\n    - /e\n')
+    )
+  })
+
+  test('a new key goes after the last key, above comments at the bottom, or before the fence', () => {
+    expect(mergeFrontMatter('---\ntitle:   x\n\n# end\n---\n', { status: 'draft' })).toBe('---\ntitle:   x\nstatus: draft\n\n# end\n---\n')
+    expect(mergeFrontMatter('---\n# only a comment\n---\n', { status: 'draft' })).toBe('---\n# only a comment\nstatus: draft\n---\n')
+  })
+
+  test('a value that would not change is not written, so its quotes and spelling stay', () => {
+    const raw = "---\ntitle: 'Notes'\nid: 007\n---\n"
+    expect(mergeFrontMatter(raw, { title: 'Notes', id: 7 })).toBe(raw)
+  })
+
+  test('new text keeps the quotes the old text had', () => {
+    expect(mergeFrontMatter("---\ntitle:  'Old'  # c\n---\n", { title: 'New' })).toBe("---\ntitle:  'New'  # c\n---\n")
+  })
+
+  test('each untouched line keeps its own line ending; new lines use the block’s', () => {
+    expect(mergeFrontMatter('---\r\ntitle:  a\nnote: b\r\n---\r\n', { title: 'c', status: 'x' })).toBe(
+      '---\r\ntitle:  c\nnote: b\r\nstatus: x\r\n---\r\n'
+    )
+  })
+
+  test('a 1.1 tag renamed in place keeps its quotes and comment', () => {
+    const rename = { rename: (tag: string) => tag.replace(/^agent\//, 'skill/') }
+    expect(mergeFrontMatter('---\ntags:\n  - "agent/x" # c\n  - keep\n---\n', { tags: rename })).toBe(
+      '---\ntags:\n  - "skill/x" # c\n  - keep\n---\n'
+    )
+  })
+
+  test('a block whose keys are all indented stays indented', () => {
+    expect(mergeFrontMatter('---\n  title: x\n  tags:\n    - a\n---\n', { status: 'draft', tags: ['a', 'b'] })).toBe(
+      '---\n  title: x\n  tags:\n    - a\n    - b\n  status: draft\n---\n'
+    )
+  })
+
+  test('the archive stamp is the only line added to a hand-written block', () => {
+    expect(addArchived(`${HAND}Body\n`, '2026-10-04T10:00:00-04:00')).toBe(
+      HAND.replace('    code:   B-101\n', '    code:   B-101\narchived: 2026-10-04T10:00:00-04:00\n') + 'Body\n'
+    )
+  })
+
+  test('YAML that cannot be spliced line by line is still patched, by rewriting the block', () => {
+    expect(mergeFrontMatter('---\n{title: a}\n---\n', { title: 'b' })).toBe('---\n{title: b}\n---\n')
+  })
+
+  test('an archive stamp copied from an earlier archive is replaced where it stands', () => {
+    expect(addArchived('---\narchived:  old  # copy\nid:   1\n---\nx\n', 'new')).toBe('---\narchived:  new  # copy\nid:   1\n---\nx\n')
+  })
+})

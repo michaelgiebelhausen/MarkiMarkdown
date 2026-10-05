@@ -746,7 +746,7 @@ describe('alignPaths (what archiving does to the YAML)', () => {
     const consistent = '---\r\nskills: [writer] # c\r\nskill_paths:\r\n  - C:/me/skills/writer\r\n---\r\n'
     expect(alignPaths(consistent, members)).toBe(consistent)
     expect(alignPaths('---\r\nskills: [writer] # c\r\ntitle: x\r\n---\r\n', members)).toBe(
-      '---\r\nskills: [writer] # c\r\ntitle: x\r\nskill_paths:\r\n  - C:/me/skills/writer\r\n---\r\n'
+      '---\r\nskills: [writer] # c\r\nskill_paths:\r\n  - C:/me/skills/writer\r\ntitle: x\r\n---\r\n'
     )
   })
 
@@ -766,5 +766,36 @@ describe('alignPaths (what archiving does to the YAML)', () => {
     expect(alignPaths(null, members)).toBeNull()
     expect(alignPaths('---\ntitle: My note: draft\n---\n', members)).toBeNull()
     expect(alignPaths('---\nskills:\n  - name: writer\n---\n', members)).toBeNull()
+  })
+})
+
+describe('applyTicks on front matter a student wrote by hand', () => {
+  test('rewrites only the lines of the lists that change', () => {
+    const raw = [
+      '---',
+      'title:   Week 3   # draft',
+      'id: 01ABC',
+      'type: note',
+      'created: 2026-09-01',
+      'description: >',
+      '  Folded',
+      '  text.',
+      'tags:',
+      '    - "exam-prep"  # mine',
+      'skills:',
+      '    - writer',
+      'skill_paths:',
+      '    - C:/me/skills/writer',
+      '---',
+      ''
+    ].join('\n')
+    const out = applyTicks(raw, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts)
+    expect(out).toBe(
+      raw
+        .replace('  # mine\n', '  # mine\n    - skill/writer\n    - skill/editor\n')
+        .replace('    - writer\n', '    - writer\n    - editor\n')
+        .replace('    - C:/me/skills/writer\n', '    - C:/me/skills/writer\n    - /me/skills/editor\n')
+    )
+    expect(applyTicks(out, { skillIds: ['s1', 's2'], domainIds: [] }, members, opts)).toBe(out)
   })
 })

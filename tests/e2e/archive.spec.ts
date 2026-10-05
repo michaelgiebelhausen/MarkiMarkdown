@@ -305,8 +305,10 @@ test('archiving lines hand-typed names up with their paths, in the working file 
   const thesis = dirs.artifact.split(String.fromCharCode(92)).join('/')
   const librarian = dirs.agent.split(String.fromCharCode(92)).join('/')
   for (const text of [readFileSync(join(dirs.raw, `essay-${today()}.md`), 'utf8'), readFileSync(notePath, 'utf8')]) {
-    // the names stay exactly as the student wrote them; only the paths are lined up
-    expect(text).toContain('\nskills: [librarian]\ndomains: [Thesis, History]\ndomain_paths:\n')
+    // the names stay exactly as the student wrote them; only the paths are lined up, a
+    // new path list going in right after its names
+    expect(text).toContain('\nid: n1\nskills: [librarian]\nskill_paths:\n')
+    expect(text).toContain('\ndomains: [Thesis, History]\ndomain_paths:\n')
     expect(blockList(text, 'domain_paths')).toEqual([thesis, '""'])
     expect(blockList(text, 'skill_paths')).toEqual([librarian])
     expect(text).not.toMatch(/^(type|created|title|tags):/m)
