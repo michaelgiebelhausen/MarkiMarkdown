@@ -149,8 +149,11 @@ test('an untitled note asks for a folder on its first save and is named from its
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog
   }, dirs.downloads)
   await saveButton().click()
-  await expect.poll(() => existsSync(join(dirs.downloads, 'cell-walls.md')), { timeout: 20000 }).toBe(true)
-  expect(readFileSync(join(dirs.downloads, 'cell-walls.md'), 'utf8')).toContain('Plants have them.')
+  const saved = join(dirs.downloads, 'cell-walls.md')
+  // the file appears empty before its text is written, so wait for the text itself
+  await expect
+    .poll(() => (existsSync(saved) ? readFileSync(saved, 'utf8') : ''), { timeout: 20000 })
+    .toContain('Plants have them.')
   await expect(h.page.locator('.chip-name')).toHaveText('cell-walls.md')
   await expect(h.page.locator('.toast')).toContainText('Saved to downloads.')
   expect(h.errors).toEqual([])
@@ -194,9 +197,11 @@ test('while a save is under way the buttons wait, and typing during it is saved 
   await releaseFolderPicker()
 
   const saved = join(dirs.downloads, 'cell-walls.md')
-  await expect.poll(() => existsSync(saved), { timeout: 20000 }).toBe(true)
-  const first = readFileSync(saved, 'utf8')
-  expect(first).toContain('Plants have them.')
+  // the file appears empty before its text is written, so wait for the text, and keep that read
+  let first = ''
+  await expect
+    .poll(() => (first = existsSync(saved) ? readFileSync(saved, 'utf8') : ''), { timeout: 20000 })
+    .toContain('Plants have them.')
   expect(first).not.toContain('Typed later.')
   await expect(saveButton()).toBeEnabled()
   await expect(workingFolderButton()).toBeEnabled()
