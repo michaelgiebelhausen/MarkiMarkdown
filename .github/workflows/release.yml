@@ -21,6 +21,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # The end-to-end tests launch the built app, so build it first
+      - run: npm run build
       - run: npx playwright test --grep-invert "capture the interface"
       - name: Build installers
         # Signing turns on automatically once the Azure secrets are set: see docs/SIGNING.md

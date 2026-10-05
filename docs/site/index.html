@@ -77,7 +77,7 @@
     <strong>Windows will warn you the first time.</strong> It says
     &ldquo;Windows protected your PC&rdquo; because this app is new and not yet signed by a company Windows
     recognises. Click <strong>More info</strong>, then <strong>Run anyway</strong>. If Windows refuses to open
-    it at all, see the <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/main/docs/INSTALL.md">install guide</a>.
+    it at all, see the <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/master/docs/INSTALL.md">install guide</a>.
   </div>
 
   <h2>What it is</h2>
@@ -109,35 +109,50 @@
   <footer>
     Free and open source under the MIT licence &middot;
     <a href="https://github.com/michaelgiebelhausen/markimarkdown">Source on GitHub</a> &middot;
-    <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/main/docs/INSTALL.md">Install guide</a>
+    <a href="https://github.com/michaelgiebelhausen/markimarkdown/blob/master/docs/INSTALL.md">Install guide</a>
   </footer>
 </div>
 
 <script>
-  // Point the big button at the right file for whoever is looking.
+  // Point the big button at the right file for whoever is looking. The file names carry the version, so ask
+  // GitHub which files the latest release has; until it answers, or if it cannot, the button opens the release.
   (function () {
-    var base = 'https://github.com/michaelgiebelhausen/markimarkdown/releases/latest/download/';
-    var version = '1.0.0';
+    var api = 'https://api.github.com/repos/michaelgiebelhausen/markimarkdown/releases/latest';
     var ua = navigator.userAgent;
     var mac = /Mac/i.test(ua);
     var win = /Windows/i.test(ua);
     var button = document.getElementById('download');
     var caption = document.getElementById('platform');
     var winNote = document.getElementById('win-note');
+    var suffix = null;
 
     if (mac) {
       button.textContent = 'Download for Mac';
-      button.href = base + 'MarkiMarkdown-' + version + '-Mac.dmg';
       caption.textContent = 'Open the file, then drag MarkiMarkdown into your Applications folder.';
       winNote.classList.add('hide');
+      suffix = '-Mac.dmg';
     } else if (win) {
       button.textContent = 'Download for Windows';
-      button.href = base + 'MarkiMarkdown-' + version + '-Windows-Setup.exe';
       caption.textContent = 'Run the file you downloaded. No administrator password needed.';
+      suffix = '-Windows-Setup.exe';
     } else {
       caption.textContent = 'MarkiMarkdown runs on Windows and Mac. Pick a download from the list below.';
       winNote.classList.add('hide');
     }
+    if (!suffix || !window.fetch) return;
+
+    fetch(api)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (release) {
+        var assets = (release && release.assets) || [];
+        for (var i = 0; i < assets.length; i++) {
+          if (assets[i].name.slice(-suffix.length) === suffix) {
+            button.href = assets[i].browser_download_url;
+            return;
+          }
+        }
+      })
+      .catch(function () {});
   })();
 </script>
 </body>
